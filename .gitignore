@@ -1,0 +1,28 @@
+# Byte-compiled Python
+__pycache__/
+*.py[cod]
+*.egg
+*.pyo
+
+# Virtual environment
+.venv/
+venv/
+env/
+.env
+
+# Environment files
+.env
+
+# macOS filesystem junk
+.DS_Store
+
+# VSCode settings
+.vscode/
+
+# Log files
+*.log
+
+# Python distribution/build
+build/
+dist/
+*.egg-info/
