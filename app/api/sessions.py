@@ -2,14 +2,17 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import List
 from datetime import datetime
+from db.models import PlanPhase, PlanSession
 import uuid
 import logging
+import re
 
 from models.session import SessionTracking, SessionTrackingUpdate
 from core.dependencies import get_current_user_email
 from core.database import get_db
 from sqlalchemy.orm import Session
 from db.models import User, SessionTracking as DBSessionTracking, TrainingPlan
+from db.models import PendingSessionUpdate
 
 logger = logging.getLogger(__name__)
 router = APIRouter(
@@ -105,6 +108,95 @@ async def update_session(
     db.commit()
     return {"success": True, "message": "Session updated successfully"}
 
+@router.get("/user/{email}/pending_updates")
+async def get_pending_updates(
+    email: str,
+    current_user: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db)
+):
+    """Get all pending updates for a user"""
+    # Implementation needed
+    pass
+
+@router.post("/user/{email}/sync_pending_updates")
+async def sync_pending_updates(
+    email: str,
+    update_ids: List[int],
+    current_user: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db)
+):
+    """Mark pending updates as synced"""
+    # Implementation needed
+    pass
+
+@router.get("/user/{email}/pending_updates")
+async def get_pending_updates(
+    email: str,
+    current_user: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db)
+):
+    """Get all pending updates for a user"""
+    if email != current_user:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    updates = db.query(PendingSessionUpdate).filter(
+        PendingSessionUpdate.user_id == user.id,
+        PendingSessionUpdate.is_synced == False
+    ).all()
+    
+    return {
+        "success": True,
+        "updates": [
+            {
+                "id": update.id,
+                "planId": update.plan_id,
+                "sessionId": update.session_id,
+                "isCompleted": update.is_completed,
+                "notes": update.notes or "",
+                "timestamp": update.timestamp.isoformat()
+            }
+            for update in updates
+        ]
+    }
+
+@router.post("/user/{email}/sync_pending_updates")
+async def sync_pending_updates(
+    email: str,
+    update_ids: List[int],
+    current_user: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db)
+):
+    """Mark pending updates as synced"""
+    if email != current_user:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Mark each update as synced
+    synced_count = 0
+    for update_id in update_ids:
+        update = db.query(PendingSessionUpdate).filter(
+            PendingSessionUpdate.id == update_id,
+            PendingSessionUpdate.user_id == user.id
+        ).first()
+        
+        if update:
+            update.is_synced = True
+            synced_count += 1
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": f"Marked {synced_count} updates as synced"
+    }
+
 @router.post("/initialize")
 async def initialize_sessions(
     email: str,
@@ -116,6 +208,66 @@ async def initialize_sessions(
     if email != current_user:
         raise HTTPException(status_code=403, detail="Unauthorized")
     
-    # Implementation would be similar to original
-    # This is a placeholder - needs full implementation
-    return {"success": True, "message": "Sessions initialized"}
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Check if sessions already exist
+    existing_count = db.query(DBSessionTracking).filter(
+        DBSessionTracking.user_id == user.id,
+        DBSessionTracking.plan_id == plan_id
+    ).count()
+    
+    if existing_count > 0:
+        return {"success": True, "message": "Sessions already initialized"}
+    
+    # Get plan phases
+    phases = db.query(PlanPhase).filter(
+        PlanPhase.plan_id == plan_id
+    ).order_by(PlanPhase.phase_order).all()
+    
+    created_sessions = []
+    
+    for phase in phases:
+        # Extract week range from phase name
+        week_match = re.search(r'weeks?\s+(\d+)-(\d+)', phase.phase_name.lower())
+        if week_match:
+            start_week = int(week_match.group(1))
+            end_week = int(week_match.group(2)) + 1
+            
+            # Get sessions for this phase
+            sessions = db.query(PlanSession).filter(
+                PlanSession.phase_id == phase.id
+            ).order_by(PlanSession.session_order).all()
+            
+            # Create tracking sessions for each week
+            for week_num in range(start_week, end_week):
+                for session in sessions:
+                    new_session = DBSessionTracking(
+                        id=str(uuid.uuid4()),
+                        user_id=user.id,
+                        plan_id=plan_id,
+                        week_number=week_num,
+                        day_of_week=session.day,
+                        focus_name=session.focus,
+                        is_completed=False,
+                        notes=""
+                    )
+                    db.add(new_session)
+                    created_sessions.append({
+                        "id": new_session.id,
+                        "planId": plan_id,
+                        "weekNumber": week_num,
+                        "dayOfWeek": session.day,
+                        "focusName": session.focus,
+                        "isCompleted": False,
+                        "notes": ""
+                    })
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": f"Created {len(created_sessions)} sessions",
+        "sessions": created_sessions
+    }

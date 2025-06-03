@@ -17,6 +17,7 @@ from app.api.projects import router as projects_router
 from app.api.training_plans import router as plans_router
 from app.api.daily_notes import router as notes_router
 from app.api.badges import router as badges_router
+from app.api.exercise_tracking import router as exercise_tracking_router
 
 # Legacy routers (if you still need them)
 import sys
@@ -60,6 +61,7 @@ app.include_router(notes_router, tags=["Daily Notes"])
 app.include_router(badges_router, tags=["Badges"])
 app.include_router(session_router, tags=["Sessions"])
 app.include_router(exercise_router, tags=["Exercises"])
+app.include_router(exercise_tracking_router, tags=["Exercise Tracking"])
 
 
 @app.on_event("startup")

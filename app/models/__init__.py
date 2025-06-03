@@ -46,6 +46,12 @@ from .daily_note import (
     DailyNote
 )
 
+from .exercise import (
+    ExerciseTracking,
+    ExerciseTrackingCreate,
+    ExerciseTrackingUpdate
+)
+
 __all__ = [
     # Auth
     "SignUpRequest",
@@ -84,5 +90,10 @@ __all__ = [
     "DailyNoteBase",
     "DailyNoteCreate",
     "DailyNoteUpdate",
-    "DailyNote"
+    "DailyNote",
+
+    # Exercise Tracking
+    "ExerciseTracking",
+    "ExerciseTrackingCreate",
+    "ExerciseTrackingUpdate"
 ]
