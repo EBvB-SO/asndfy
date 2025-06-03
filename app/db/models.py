@@ -2,7 +2,7 @@
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, Float, Index, CheckConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from core.database import Base
+from app.core.database import Base
 import uuid
 
 def generate_uuid():

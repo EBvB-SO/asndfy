@@ -6,15 +6,21 @@ from sqlalchemy.orm import sessionmaker
 from contextlib import contextmanager
 import logging
 
+from dotenv import load_dotenv
+load_dotenv()
+
 logger = logging.getLogger(__name__)
 
 # Database configuration
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://user:password@localhost/ascendify"
-)
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError(
+        "Environment variable DATABASE_URL is not set. "
+        "Please add a .env file with:\n"
+        "    DATABASE_URL=postgresql://<your_user>@localhost:5432/asndfy_db"
+    )
 
-# Handle Heroku-style postgres:// URLs
+# Handle old-style “postgres://” URIs (if needed)
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 

@@ -1,3 +1,4 @@
+# scripts/setup_database.py
 #!/usr/bin/env python
 """
 Simple database setup script for fresh PostgreSQL database
