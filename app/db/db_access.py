@@ -1,9 +1,4 @@
-# backend/app/db/db_access.py
-
-"""
-Database access adapter to maintain compatibility with original code
-while using SQLAlchemy ORM.
-"""
+# app/db/db_access.py
 
 import logging
 import uuid
@@ -11,7 +6,7 @@ from typing import List, Dict, Any, Optional
 
 from sqlalchemy.exc import IntegrityError
 
-from app.core.database import get_db_session
+from app.core.database import get_db_session, SessionLocal
 from app.core.security import get_password_hash, verify_password
 from db.models import (
     User,
@@ -57,14 +52,19 @@ class DBResult:
         return self.success
 
 
+# ------------------------------------------------------------------
 # Aliases for backward compatibility
+#
+#   get_db_connection → yields a session via context manager
+#   get_connection    → returns a raw SessionLocal() instance
+# ------------------------------------------------------------------
+
 get_db_connection = get_db_session
-get_connection = get_db_session
+get_connection = SessionLocal  # old code expecting a “.cursor()”‐style handle can now do: db = get_connection()
 
-
-# -------------------------------
-# User Management Functions
-# -------------------------------
+# ------------------------------------------------------------------
+# USER MANAGEMENT FUNCTIONS
+# ------------------------------------------------------------------
 
 def create_user(name: str, email: str, password: str) -> DBResult:
     """Create a new user with a hashed password."""
@@ -77,7 +77,7 @@ def create_user(name: str, email: str, password: str) -> DBResult:
             user = User(
                 name=name,
                 email=email,
-                password_hash=get_password_hash(password)
+                password_hash=get_password_hash(password),
             )
             db.add(user)
             db.commit()
@@ -121,9 +121,9 @@ def update_user_password(email: str, new_password: str) -> DBResult:
             return DBResult(False, f"Database error: {e}")
 
 
-# -------------------------------
-# User Profile Functions
-# -------------------------------
+# ------------------------------------------------------------------
+# USER PROFILE FUNCTIONS
+# ------------------------------------------------------------------
 
 def get_user_profile(user_id: int) -> Optional[Dict[str, Any]]:
     """Get a user's profile by user ID."""
@@ -164,7 +164,7 @@ def get_user_profile(user_id: int) -> Optional[Dict[str, Any]]:
                 "access_to_coaches": profile.access_to_coaches,
                 "time_for_cross_training": profile.time_for_cross_training,
                 "additional_notes": profile.additional_notes,
-                "updated_at": profile.updated_at.isoformat() if profile.updated_at else None
+                "updated_at": profile.updated_at.isoformat() if profile.updated_at else None,
             }
         except Exception as e:
             logger.error(f"Error getting user profile: {e}")
@@ -176,7 +176,6 @@ def update_user_profile(user_id: int, profile_data: Dict[str, Any]) -> DBResult:
     with get_db_session() as db:
         try:
             profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
-
             if profile:
                 for key, value in profile_data.items():
                     if hasattr(profile, key):
@@ -193,16 +192,16 @@ def update_user_profile(user_id: int, profile_data: Dict[str, Any]) -> DBResult:
             return DBResult(False, f"Error updating profile: {e}")
 
 
-# -------------------------------
-# Exercise Management Functions
-# -------------------------------
+# ------------------------------------------------------------------
+# EXERCISE MANAGEMENT FUNCTIONS
+# ------------------------------------------------------------------
 
 def get_exercises() -> List[Dict[str, Any]]:
     """Get all exercises with their required facilities and time requirements."""
     with get_db_session() as db:
         try:
             exercises = db.query(Exercise).all()
-            result = []
+            result: List[Dict[str, Any]] = []
             for exercise in exercises:
                 result.append({
                     "id": exercise.id,
@@ -212,7 +211,7 @@ def get_exercises() -> List[Dict[str, Any]]:
                     "priority": exercise.priority,
                     "time_required": exercise.time_required,
                     "required_facilities": exercise.required_facilities,
-                    "best_for": [t.target for t in exercise.targets]
+                    "best_for": [t.target for t in exercise.targets],
                 })
             return result
         except Exception as e:
@@ -234,9 +233,9 @@ def add_exercise_target(exercise_id: int, target: str) -> DBResult:
             return DBResult(False, f"Error adding exercise target: {e}")
 
 
-# -------------------------------
-# Project Management Functions
-# -------------------------------
+# ------------------------------------------------------------------
+# PROJECT MANAGEMENT FUNCTIONS
+# ------------------------------------------------------------------
 
 def create_project(user_id: int, project_data: Dict[str, Any]) -> DBResult:
     """Create a new project."""
@@ -245,7 +244,7 @@ def create_project(user_id: int, project_data: Dict[str, Any]) -> DBResult:
             proj = Project(
                 id=project_data.get("id", str(uuid.uuid4())),
                 user_id=user_id,
-                **{k: v for k, v in project_data.items() if k != "id"}
+                **{k: v for k, v in project_data.items() if k != "id"},
             )
             db.add(proj)
             db.commit()
@@ -261,7 +260,7 @@ def get_user_projects(user_id: int) -> List[Dict[str, Any]]:
     with get_db_session() as db:
         try:
             projects = db.query(Project).filter(Project.user_id == user_id).all()
-            result = []
+            result: List[Dict[str, Any]] = []
             for project in projects:
                 result.append({
                     "id": project.id,
@@ -277,7 +276,7 @@ def get_user_projects(user_id: int) -> List[Dict[str, Any]]:
                     "completion_date": project.completion_date.isoformat() if project.completion_date else None,
                     "created_at": project.created_at.isoformat() if project.created_at else None,
                     "updated_at": project.updated_at.isoformat() if project.updated_at else None,
-                    "log_count": len(project.logs)
+                    "log_count": len(project.logs),
                 })
             return result
         except Exception as e:
@@ -294,7 +293,7 @@ def add_project_log(project_id: str, date: str, content: str, mood: Optional[str
                 project_id=project_id,
                 date=date,
                 content=content,
-                mood=mood
+                mood=mood,
             )
             db.add(log)
             db.commit()
@@ -310,7 +309,7 @@ def get_project_logs(project_id: str) -> List[Dict[str, Any]]:
     with get_db_session() as db:
         try:
             logs = db.query(ProjectLog).filter(ProjectLog.project_id == project_id).all()
-            result = []
+            result: List[Dict[str, Any]] = []
             for log in logs:
                 result.append({
                     "id": log.id,
@@ -318,7 +317,7 @@ def get_project_logs(project_id: str) -> List[Dict[str, Any]]:
                     "date": log.date.isoformat(),
                     "content": log.content,
                     "mood": log.mood,
-                    "created_at": log.created_at.isoformat()
+                    "created_at": log.created_at.isoformat(),
                 })
             return result
         except Exception as e:
@@ -326,14 +325,12 @@ def get_project_logs(project_id: str) -> List[Dict[str, Any]]:
             return []
 
 
-# -------------------------------
-# Training Plan / Session Functions
-# -------------------------------
+# ------------------------------------------------------------------
+# TRAINING PLAN / SESSION FUNCTIONS
+# ------------------------------------------------------------------
 
 def get_sessions_for_plan(user_id: int, plan_id: str) -> List[Dict[str, Any]]:
-    """
-    Get all tracking sessions for a specific user & plan.
-    """
+    """Get all tracking sessions for a specific user & plan."""
     with get_db_session() as db:
         try:
             sessions = (
@@ -341,7 +338,7 @@ def get_sessions_for_plan(user_id: int, plan_id: str) -> List[Dict[str, Any]]:
                 .filter(SessionTracking.user_id == user_id, SessionTracking.plan_id == plan_id)
                 .all()
             )
-            result = []
+            result: List[Dict[str, Any]] = []
             for s in sessions:
                 result.append({
                     "id": s.id,
@@ -351,7 +348,7 @@ def get_sessions_for_plan(user_id: int, plan_id: str) -> List[Dict[str, Any]]:
                     "focus_name": s.focus_name,
                     "is_completed": s.is_completed,
                     "notes": s.notes,
-                    "completion_date": s.completion_date.isoformat() if s.completion_date else None
+                    "completion_date": s.completion_date.isoformat() if s.completion_date else None,
                 })
             return result
         except Exception as e:
@@ -372,7 +369,7 @@ def create_sessions_for_plan(user_id: int, plan_id: str) -> DBResult:
                 .order_by(PlanPhase.phase_order)
                 .all()
             )
-            created_sessions = []
+            created_sessions: List[Dict[str, Any]] = []
 
             for phase in phases:
                 plan_sessions = (
@@ -391,7 +388,7 @@ def create_sessions_for_plan(user_id: int, plan_id: str) -> DBResult:
                         focus_name=ps.focus,
                         is_completed=False,
                         notes="",
-                        completion_date=None
+                        completion_date=None,
                     )
                     db.add(new_session)
                     db.flush()
@@ -403,7 +400,7 @@ def create_sessions_for_plan(user_id: int, plan_id: str) -> DBResult:
                         "focus_name": new_session.focus_name,
                         "is_completed": new_session.is_completed,
                         "notes": new_session.notes,
-                        "completion_date": None
+                        "completion_date": None,
                     })
 
             db.commit()
@@ -414,9 +411,9 @@ def create_sessions_for_plan(user_id: int, plan_id: str) -> DBResult:
             return DBResult(False, f"Error creating sessions: {e}")
 
 
-# -------------------------------
-# Pending Session Updates (Offline Sync)
-# -------------------------------
+# ------------------------------------------------------------------
+# PENDING SESSION UPDATES (Offline Sync)
+# ------------------------------------------------------------------
 
 def get_pending_updates(user_id: int) -> List[Dict[str, Any]]:
     """
@@ -429,7 +426,7 @@ def get_pending_updates(user_id: int) -> List[Dict[str, Any]]:
                 .filter(PendingSessionUpdate.user_id == user_id, PendingSessionUpdate.is_synced == False)
                 .all()
             )
-            result = []
+            result: List[Dict[str, Any]] = []
             for u in updates:
                 result.append({
                     "id": u.id,
@@ -437,7 +434,7 @@ def get_pending_updates(user_id: int) -> List[Dict[str, Any]]:
                     "session_id": u.session_id,
                     "is_completed": u.is_completed,
                     "notes": u.notes,
-                    "timestamp": u.timestamp.isoformat() if u.timestamp else None
+                    "timestamp": u.timestamp.isoformat() if u.timestamp else None,
                 })
             return result
         except Exception as e:
@@ -464,9 +461,9 @@ def mark_update_synced(update_id: int) -> DBResult:
             return DBResult(False, f"Error updating sync status: {e}")
 
 
-# -------------------------------
-# Daily Notes Functions
-# -------------------------------
+# ------------------------------------------------------------------
+# DAILY NOTES FUNCTIONS
+# ------------------------------------------------------------------
 
 def get_daily_notes_for_user(user_id: int) -> List[Dict[str, Any]]:
     """Get all daily notes for a user."""
@@ -478,14 +475,14 @@ def get_daily_notes_for_user(user_id: int) -> List[Dict[str, Any]]:
                 .order_by(DailyNote.date)
                 .all()
             )
-            result = []
+            result: List[Dict[str, Any]] = []
             for note in notes:
                 result.append({
                     "id": note.id,
                     "date": note.date,
                     "content": note.content,
                     "created_at": note.created_at.isoformat() if note.created_at else None,
-                    "updated_at": note.updated_at.isoformat() if note.updated_at else None
+                    "updated_at": note.updated_at.isoformat() if note.updated_at else None,
                 })
             return result
         except Exception as e:
@@ -502,19 +499,19 @@ def get_daily_notes_for_date_range(user_id: int, start_date: str, end_date: str)
                 .filter(
                     DailyNote.user_id == user_id,
                     DailyNote.date >= start_date,
-                    DailyNote.date <= end_date
+                    DailyNote.date <= end_date,
                 )
                 .order_by(DailyNote.date)
                 .all()
             )
-            result = []
+            result: List[Dict[str, Any]] = []
             for note in notes:
                 result.append({
                     "id": note.id,
                     "date": note.date,
                     "content": note.content,
                     "created_at": note.created_at.isoformat() if note.created_at else None,
-                    "updated_at": note.updated_at.isoformat() if note.updated_at else None
+                    "updated_at": note.updated_at.isoformat() if note.updated_at else None,
                 })
             return result
         except Exception as e:
@@ -533,7 +530,7 @@ def create_daily_note(user_id: int, note_data: Dict[str, Any]) -> DBResult:
                 id=str(uuid.uuid4()),
                 user_id=user_id,
                 date=note_data.get("date"),
-                content=note_data.get("content")
+                content=note_data.get("content"),
             )
             db.add(new_note)
             db.commit()
@@ -578,9 +575,9 @@ def delete_daily_note(note_id: str) -> DBResult:
             return DBResult(False, f"Error deleting daily note: {e}")
 
 
-# -------------------------------
-# Badge / Achievement Functions
-# -------------------------------
+# ------------------------------------------------------------------
+# BADGE / ACHIEVEMENT FUNCTIONS
+# ------------------------------------------------------------------
 
 def get_badge_categories() -> List[Dict[str, Any]]:
     """Retrieve all badge categories."""
@@ -598,14 +595,14 @@ def get_badges_for_category(category_id: int) -> List[Dict[str, Any]]:
     with get_db_session() as db:
         try:
             badges = db.query(Badge).filter(Badge.category_id == category_id).all()
-            result = []
+            result: List[Dict[str, Any]] = []
             for b in badges:
                 result.append({
                     "id": b.id,
                     "name": b.name,
                     "description": b.description,
                     "icon_name": b.icon_name,
-                    "how_to_earn": b.how_to_earn
+                    "how_to_earn": b.how_to_earn,
                 })
             return result
         except Exception as e:
@@ -638,9 +635,9 @@ def award_badge_to_user(user_id: int, badge_id: int) -> DBResult:
             return DBResult(False, f"Error awarding badge: {e}")
 
 
-# -------------------------------
-# (Optional) Exercise Tracking Functions
-# -------------------------------
+# ------------------------------------------------------------------
+# EXERCISE TRACKING FUNCTIONS
+# ------------------------------------------------------------------
 
 def track_exercise(
     user_id: int,
@@ -648,7 +645,7 @@ def track_exercise(
     session_id: str,
     exercise_id: str,
     date: str,
-    notes: Optional[str] = None
+    notes: Optional[str] = None,
 ) -> DBResult:
     """Record an exercise tracking entry."""
     with get_db_session() as db:
@@ -660,7 +657,7 @@ def track_exercise(
                 session_id=session_id,
                 exercise_id=exercise_id,
                 date=date,
-                notes=notes or ""
+                notes=notes or "",
             )
             db.add(et)
             db.commit()
@@ -680,7 +677,7 @@ def get_exercise_tracking_for_session(session_id: str) -> List[Dict[str, Any]]:
                 .filter(ExerciseTracking.session_id == session_id)
                 .all()
             )
-            result = []
+            result: List[Dict[str, Any]] = []
             for e in entries:
                 result.append({
                     "id": e.id,
@@ -691,7 +688,7 @@ def get_exercise_tracking_for_session(session_id: str) -> List[Dict[str, Any]]:
                     "date": e.date.isoformat(),
                     "notes": e.notes,
                     "created_at": e.created_at.isoformat() if e.created_at else None,
-                    "updated_at": e.updated_at.isoformat() if e.updated_at else None
+                    "updated_at": e.updated_at.isoformat() if e.updated_at else None,
                 })
             return result
         except Exception as e:
@@ -699,9 +696,9 @@ def get_exercise_tracking_for_session(session_id: str) -> List[Dict[str, Any]]:
             return []
 
 
-# -------------------------------
-# Placeholder for TrainingPlan CRUD
-# -------------------------------
+# ------------------------------------------------------------------
+# TRAINING PLAN CRUD
+# ------------------------------------------------------------------
 
 def create_training_plan(user_id: int, plan_data: Dict[str, Any]) -> DBResult:
     """
@@ -717,7 +714,7 @@ def create_training_plan(user_id: int, plan_data: Dict[str, Any]) -> DBResult:
                 route_name=plan_data["route_name"],
                 grade=plan_data["grade"],
                 route_overview=plan_data.get("route_overview"),
-                training_overview=plan_data.get("training_overview")
+                training_overview=plan_data.get("training_overview"),
             )
             db.add(plan)
             db.flush()
@@ -728,7 +725,7 @@ def create_training_plan(user_id: int, plan_data: Dict[str, Any]) -> DBResult:
                     plan_id=plan.id,
                     phase_name=p["phase_name"],
                     description=p["description"],
-                    phase_order=p["phase_order"]
+                    phase_order=p["phase_order"],
                 )
                 db.add(phase)
                 db.flush()
@@ -739,7 +736,7 @@ def create_training_plan(user_id: int, plan_data: Dict[str, Any]) -> DBResult:
                         day=s["day"],
                         focus=s["focus"],
                         details=s["details"],
-                        session_order=s["session_order"]
+                        session_order=s["session_order"],
                     )
                     db.add(ps)
 
@@ -761,7 +758,7 @@ def get_training_plan(plan_id: str) -> Optional[Dict[str, Any]]:
             if not plan:
                 return None
 
-            result = {
+            result: Dict[str, Any] = {
                 "id": plan.id,
                 "user_id": plan.user_id,
                 "route_name": plan.route_name,
@@ -769,7 +766,7 @@ def get_training_plan(plan_id: str) -> Optional[Dict[str, Any]]:
                 "route_overview": plan.route_overview,
                 "training_overview": plan.training_overview,
                 "purchased_at": plan.purchased_at.isoformat(),
-                "phases": []
+                "phases": [],
             }
 
             phases = (
@@ -779,12 +776,12 @@ def get_training_plan(plan_id: str) -> Optional[Dict[str, Any]]:
                 .all()
             )
             for phase in phases:
-                p_dict = {
+                p_dict: Dict[str, Any] = {
                     "id": phase.id,
                     "phase_name": phase.phase_name,
                     "description": phase.description,
                     "phase_order": phase.phase_order,
-                    "sessions": []
+                    "sessions": [],
                 }
                 sessions = (
                     db.query(PlanSession)
@@ -798,7 +795,7 @@ def get_training_plan(plan_id: str) -> Optional[Dict[str, Any]]:
                         "day": s.day,
                         "focus": s.focus,
                         "details": s.details,
-                        "session_order": s.session_order
+                        "session_order": s.session_order,
                     })
                 result["phases"].append(p_dict)
 

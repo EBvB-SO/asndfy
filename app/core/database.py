@@ -1,17 +1,20 @@
-# core/database.py
+# app/core/database.py
+
 import os
+import logging
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from contextlib import contextmanager
-import logging
-
 from dotenv import load_dotenv
-load_dotenv()
 
+load_dotenv()
 logger = logging.getLogger(__name__)
 
-# Database configuration
+# ---------------------------------------------------
+# DATABASE URL & ENGINE SETUP
+# ---------------------------------------------------
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError(
@@ -20,51 +23,61 @@ if not DATABASE_URL:
         "    DATABASE_URL=postgresql://<your_user>@localhost:5432/asndfy_db"
     )
 
-# Handle old-style “postgres://” URIs (if needed)
+# Convert old‐style “postgres://” URIs if necessary:
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# Create SQLAlchemy engine
 engine = create_engine(
     DATABASE_URL,
     pool_size=10,
     max_overflow=20,
-    pool_pre_ping=True,  # Verify connections before using
-    pool_recycle=3600,   # Recycle connections after 1 hour
+    pool_pre_ping=True,
+    pool_recycle=3600,
 )
 
-# Create SessionLocal class
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# ---------------------------------------------------
+# SESSION FACTORY & BASE CLASS
+# ---------------------------------------------------
 
-# Create Base class for models
+SessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine
+)
+
 Base = declarative_base()
 
-# Dependency to get DB session
-def get_db():
-    """FastAPI dependency to get database session"""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+# ---------------------------------------------------
+# CONTEXT MANAGER FOR SESSIONS
+# ---------------------------------------------------
 
 @contextmanager
 def get_db_session():
-    """Context manager for database sessions"""
+    """
+    Context‐manager for SQLAlchemy sessions.
+    Use like:
+        with get_db_session() as db:
+            ...
+    """
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
 
-# Legacy support for existing code
-def get_connection():
-    """
-    Legacy connection function for backward compatibility.
-    Returns a SQLAlchemy session that mimics sqlite3 connection behavior.
-    """
-    return SessionLocal()
+# ---------------------------------------------------
+# FASTAPI DEPENDENCY (if you’re using FastAPI)
+# ---------------------------------------------------
 
-def get_db_connection():
-    """Legacy context manager for backward compatibility"""
-    return get_db_session()
+def get_db():
+    """
+    FastAPI dependency to yield a SQLAlchemy session.
+    Use in your route functions as:
+        def some_route(..., db: Session = Depends(get_db)):
+            ...
+    """
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
