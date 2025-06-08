@@ -18,7 +18,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/badges", tags=["Badges"])
 
 @router.get("/", response_model=List[Badge])
-def get_all_badges():
+def get_all_badges(
+    current_user: str = Depends(get_current_user_email),
+):
     """Get all available badges."""
     badges = db.get_badges()
     return badges

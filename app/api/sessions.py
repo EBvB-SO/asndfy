@@ -4,7 +4,7 @@ import uuid
 import logging
 import re
 from datetime import datetime
-from typing import List
+from typing import List, Dict, Any
 
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
@@ -22,18 +22,17 @@ from core.database import get_db
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
-    prefix="/user/{email}/plans/{planId}",
+    prefix="/user/{email}/plans/{planId}/sessions",
     tags=["Session Tracking"],
 )
 
-
-@router.get("/sessions", response_model=List[SessionTracking])
+@router.get("", response_model=List[SessionTracking])
 async def get_sessions(
     email: str,
     planId: str,
     current_user: str = Depends(get_current_user_email),
     db: Session   = Depends(get_db),
-):
+) -> List[SessionTracking]:
     """
     Retrieve all tracking sessions for a given user & plan.
     """
@@ -68,15 +67,14 @@ async def get_sessions(
         for s in sessions
     ]
 
-
-@router.post("/sessions")
+@router.post("", response_model=Dict[str, Any])
 async def update_session(
     email: str,
     planId: str,
     update: SessionTrackingUpdate,
     current_user: str = Depends(get_current_user_email),
     db: Session   = Depends(get_db),
-):
+) -> Dict[str, Any]:
     """
     Update an existing session or create a new one if it doesn't exist.
     """
@@ -127,14 +125,13 @@ async def update_session(
     db.commit()
     return {"success": True, "message": "Session updated successfully"}
 
-
-@router.post("/initialize")
+@router.post("/initialize", response_model=Dict[str, Any])
 async def initialize_sessions(
     email: str,
     planId: str,
     current_user: str = Depends(get_current_user_email),
     db: Session   = Depends(get_db),
-):
+) -> Dict[str, Any]:
     """
     Bootstrap tracking sessions for each week/day in a plan,
     based on PlanPhase → PlanSession templates.
@@ -164,7 +161,7 @@ async def initialize_sessions(
           .all()
     )
 
-    created = []
+    created: List[Dict[str, Any]] = []
     for phase in phases:
         match = re.search(r"weeks?\s+(\d+)-(\d+)", phase.phase_name.lower())
         if not match:

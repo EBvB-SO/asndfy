@@ -918,8 +918,8 @@ Return only JSON with a top‐level structure containing route_overview, trainin
             if not is_valid:
                 raise ValueError(f"Generated plan failed validation: {error_msg}")
             
-            # Return the complete plan
-            return parsed
+            # Return only what the frontend’s PhaseBasedPlan needs
+            return { "phases": parsed["phases"] }
             
         except json.JSONDecodeError as e:
             logger.error(f"Error parsing JSON: {str(e)}")
