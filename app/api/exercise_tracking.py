@@ -8,14 +8,14 @@ from typing import List
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 
-from models.exercise import (
+from app.models.exercise import (
     ExerciseTracking,          # Pydantic model for output
     ExerciseTrackingCreate,    # Pydantic model for create payload
     ExerciseTrackingUpdate     # Pydantic model for update payload, if you use it
 )
-from core.dependencies import get_current_user_email
-from core.database import get_db
-from db.models import User, ExerciseTracking as DBExerciseTracking
+from app.core.dependencies import get_current_user_email
+from app.core.database import get_db
+from app.db.models import User, ExerciseTracking as DBExerciseTracking
 
 logger = logging.getLogger(__name__)
 

@@ -4,15 +4,15 @@ from fastapi import APIRouter, HTTPException, Depends
 from typing import List
 import logging
 
-from models.training_plan import (
+from app.models.training_plan import (
     PhasePlanRequest,
     FullPlanRequest,
     TrainingPlan
 )
 
-import db.db_access as db
-from services.plan_generator import PlanGeneratorService
-from core.dependencies import get_current_user_email
+import app.db.db_access as db
+from app.services.plan_generator import PlanGeneratorService
+from app.core.dependencies import get_current_user_email
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/training_plans", tags=["Training Plans"])

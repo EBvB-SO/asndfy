@@ -9,15 +9,15 @@ from typing import List, Dict, Any
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 
-from db.models import (
+from app.db.models import (
     User,
     SessionTracking as DBSessionTracking,
     PlanPhase,
     PlanSession,
 )
-from models.session import SessionTracking, SessionTrackingUpdate
-from core.dependencies import get_current_user_email
-from core.database import get_db
+from app.models.session import SessionTracking, SessionTrackingUpdate
+from app.core.dependencies import get_current_user_email
+from app.core.database import get_db
 
 logger = logging.getLogger(__name__)
 

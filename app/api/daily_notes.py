@@ -11,10 +11,10 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import the db_access module as "db"
-import db.db_access as db
+import app.db.db_access as db
 
-from models.daily_note import DailyNoteCreate, DailyNoteUpdate, DailyNote
-from core.dependencies import get_current_user_email
+from app.models.daily_note import DailyNoteCreate, DailyNoteUpdate, DailyNote
+from app.core.dependencies import get_current_user_email
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/daily_notes", tags=["Daily Notes"])

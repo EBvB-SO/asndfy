@@ -1,194 +1,159 @@
-# api/authentication.py
-from fastapi import APIRouter, HTTPException
-from typing import Dict
+# app/api/authentication.py
+
+import logging
 import random
 import string
-from datetime import datetime, timedelta
-import logging
-import sys
-import os
 
-# Add parent directory to path to import from root
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, EmailStr
 
-# Import the db_access module as "db" so that db.create_user, db.verify_user, etc. are available
-import db.db_access as db
-
-from models.auth_models import (
-    SignUpRequest, 
-    SignInRequest, 
-    ForgotPasswordRequest, 
-    ForgotPasswordResponse,
+from app.core.redis import redis_client
+from app.db.db_access import create_user, verify_user, update_user_password
+from app.services.email_service import send_welcome_email, send_password_reset_email
+from app.core.security import create_access_token
+from app.models.auth_models import (
+    SignUpRequest,
+    SignInRequest,
+    ForgotPasswordRequest,
     VerifyResetCodeRequest,
-    ResetPasswordRequest
+    ResetPasswordRequest,
+    BaseResponse,
+    DataResponse,
 )
-from services.email_service import send_welcome_email, send_password_reset_email
-from core.security import create_access_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
-# Temporary storage for reset codes - should be Redis in production
-reset_codes: Dict[str, Dict] = {}
+# How long (in seconds) reset codes live in Redis
+RESET_CODE_TTL = 3600
 
-@router.post("/signup")
-def signup(data: SignUpRequest):
-    result = db.create_user(data.name, data.email, data.password)
+
+class TestEmailDeliverabilityRequest(BaseModel):
+    email: EmailStr
+
+
+@router.post("/signup", response_model=BaseResponse)
+async def signup(data: SignUpRequest):
+    """Create a new user record and send welcome email."""
+    result = create_user(data.name, data.email, data.password)
     if not result:
         raise HTTPException(status_code=400, detail=result.message)
-    
-    # Send welcome email
+
     send_welcome_email(data.email, data.name)
-    
-    return {"success": True, "message": "User created."}
+    return BaseResponse(success=True, message="User created.")
 
 
-@router.post("/signin")
-def signin(data: SignInRequest):
-    result = db.verify_user(data.email, data.password)
+@router.post("/signin", response_model=DataResponse[dict])
+async def signin(data: SignInRequest):
+    """Authenticate and return JWT token."""
+    result = verify_user(data.email, data.password)
     if not result:
         raise HTTPException(status_code=401, detail="Invalid credentials.")
-    
-    # Create JWT token
-    access_token = create_access_token(
-        data={"email": data.email, "user_id": result.data["id"]}
-    )
-    
-    return {
-        "success": True,
-        "message": "Signed in successfully.",
-        "access_token": access_token,
-        "token_type": "bearer",
+
+    token = create_access_token({
         "email": data.email,
         "user_id": result.data["id"]
-    }
+    })
+    return DataResponse(
+        success=True,
+        message="Signed in successfully.",
+        data={
+            "access_token": token,
+            "token_type": "bearer",
+            "email": data.email,
+            "user_id": result.data["id"],
+        },
+    )
 
-@router.post("/forgot-password", response_model=ForgotPasswordResponse)
+
+@router.post("/forgot-password", response_model=BaseResponse)
 async def forgot_password(request: ForgotPasswordRequest):
-    """Handle forgot password request."""
-    try:
-        # Generate a random 6-digit reset code
-        reset_code = ''.join(random.choices(string.digits, k=6))
-        
-        # Store the code with expiration (1 hour)
-        reset_codes[request.email] = {
-            'code': reset_code,
-            'expires': datetime.now() + timedelta(hours=1)
-        }
-        
-        # Send the email with the reset code
-        success = send_password_reset_email(request.email, reset_code)
-        
-        if success:
-            return ForgotPasswordResponse(
-                message="Password reset code sent to your email",
-                success=True
-            )
-        else:
-            # Still return success to avoid email enumeration
-            return ForgotPasswordResponse(
-                message="If an account exists with this email, you will receive a reset code",
-                success=True
-            )
-            
-    except Exception as e:
-        logger.error(f"Error in forgot password: {str(e)}")
-        # Don't expose internal errors
-        return ForgotPasswordResponse(
-            message="If an account exists with this email, you will receive a reset code",
-            success=True
-        )
+    """Generate a 6-digit reset code, store in Redis, and email it."""
+    code = "".join(random.choices(string.digits, k=6))
+    await redis_client.set(f"pwdreset:{request.email}", code, ex=RESET_CODE_TTL)
+    send_password_reset_email(request.email, code)
+    return BaseResponse(
+        success=True,
+        message="If an account exists, you’ll receive a reset code shortly."
+    )
 
-@router.post("/verify-reset-code")
+
+@router.post("/verify-reset-code", response_model=BaseResponse)
 async def verify_reset_code(request: VerifyResetCodeRequest):
-    """Verify the reset code is valid."""
-    if request.email not in reset_codes:
+    """Check the submitted code against Redis entry."""
+    key = f"pwdreset:{request.email}"
+    stored = await redis_client.get(key)
+    if stored is None:
         raise HTTPException(status_code=400, detail="Invalid or expired code")
-    
-    stored = reset_codes[request.email]
-    
-    # Check expiration
-    if datetime.now() > stored['expires']:
-        del reset_codes[request.email]
-        raise HTTPException(status_code=400, detail="Code has expired")
-    
-    # Check code
-    if stored['code'] != request.code:
+    if stored != request.code:
         raise HTTPException(status_code=400, detail="Invalid code")
-    
-    return {"message": "Code verified", "valid": True}
+    return BaseResponse(success=True, message="Code verified")
 
-@router.post("/reset-password")
+
+@router.post("/reset-password", response_model=BaseResponse)
 async def reset_password(request: ResetPasswordRequest):
-    """Reset the password with a valid code."""
-    # First verify the code
-    if request.email not in reset_codes:
+    """Validate code, update password, and clear the code."""
+    key = f"pwdreset:{request.email}"
+    stored = await redis_client.get(key)
+    if stored is None or stored != request.code:
         raise HTTPException(status_code=400, detail="Invalid or expired code")
-    
-    stored = reset_codes[request.email]
-    
-    if datetime.now() > stored['expires'] or stored['code'] != request.code:
-        raise HTTPException(status_code=400, detail="Invalid or expired code")
-    
-    # Update the user's password in database
-    result = db.update_user_password(request.email, request.new_password)
-    
+
+    result = update_user_password(request.email, request.new_password)
     if not result:
         raise HTTPException(status_code=500, detail="Failed to update password")
-    
-    # Clear the used code
-    del reset_codes[request.email]
-    
-    return {"message": "Password reset successfully", "success": True}
 
-@router.post("/test-email-deliverability")
-async def test_email_deliverability(request: dict):
-    """Test email deliverability with detailed diagnostics."""
-    
-    test_email = request.get("email")
-    
-    # Send test email
+    await redis_client.delete(key)
+    return BaseResponse(success=True, message="Password reset successfully")
+
+
+@router.post(
+    "/test-email-deliverability",
+    response_model=DataResponse[dict],
+    summary="Diagnostic endpoint for email deliverability"
+)
+async def test_email_deliverability(request: TestEmailDeliverabilityRequest):
+    """Send a test reset email and return diagnostics."""
+    test_email = request.email
     test_code = "TEST123"
     success = send_password_reset_email(test_email, test_code)
-    
-    # Get domain info
-    domain = test_email.split('@')[1] if '@' in test_email else 'unknown'
-    
-    # Check if it's a problematic domain
-    problematic_domains = {
+
+    domain = test_email.split('@')[1]
+    problematic = {
         'hotmail.com', 'outlook.com', 'live.com', 'msn.com',
         'yahoo.com', 'aol.com'
     }
-    
-    is_problematic = domain in problematic_domains
-    
+    is_problematic = domain in problematic
+
     recommendations = []
-    
     if is_problematic:
         recommendations.extend([
-            f"Add noreply@em7572.asndfy.com to your contacts/safe sender list",
-            "Check your Spam/Junk folder",
-            "Check 'Other' or 'Promotions' tab if using Outlook",
-            "Wait 2-5 minutes for delivery (some providers delay new senders)"
+            f"Add noreply@em7572.asndfy.com to your safe senders",
+            "Check Spam/Junk folder",
+            "Check 'Other' or 'Promotions' tab in Outlook",
+            "Wait 2-5 minutes for delivery"
         ])
-    
     if not success:
         recommendations.extend([
-            "Verify SendGrid API key is correct",
-            "Check SendGrid dashboard for bounce/block notifications",
-            "Ensure the email address is valid"
+            "Verify SendGrid API key",
+            "Check SendGrid bounces/blocks",
+            "Ensure email address is valid"
         ])
-    
-    return {
-        "success": success,
-        "test_email": test_email,
-        "domain": domain,
-        "is_problematic_domain": is_problematic,
-        "recommendations": recommendations,
-        "next_steps": [
-            "1. Check inbox (including spam/junk)",
-            "2. Add sender to contacts if found in spam",
-            "3. If not received in 5 minutes, check SendGrid Activity Feed",
-            "4. Report back with results"
-        ]
-    }
+
+    next_steps = [
+        "1. Check inbox (incl. spam/junk)",
+        "2. Add sender to contacts if found in spam",
+        "3. If not received in 5 minutes, check SendGrid logs",
+        "4. Report back with results"
+    ]
+
+    return DataResponse(
+        success=success,
+        message="Deliverability test completed",
+        data={
+            "test_email": test_email,
+            "domain": domain,
+            "is_problematic_domain": is_problematic,
+            "recommendations": recommendations,
+            "next_steps": next_steps,
+        }
+    )

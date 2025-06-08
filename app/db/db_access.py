@@ -5,10 +5,13 @@ import uuid
 from typing import List, Dict, Any, Optional
 
 from sqlalchemy.exc import IntegrityError
+from datetime import datetime
 
 from app.core.database import get_db_session, SessionLocal
+from app.models.exercise import ExerciseEntry, ExerciseEntryCreate, ExerciseEntryUpdate
 from app.core.security import get_password_hash, verify_password
-from db.models import (
+from .models import ExerciseEntry as DBExerciseEntry
+from .models import (
     User,
     UserProfile,
     Project,
@@ -232,6 +235,80 @@ def add_exercise_target(exercise_id: int, target: str) -> DBResult:
             logger.error(f"Error adding exercise target: {e}")
             return DBResult(False, f"Error adding exercise target: {e}")
 
+def get_all_exercises(user_id: int) -> List[ExerciseEntry]:
+    with get_db_session() as db:
+        rows = (
+            db.query(DBExerciseEntry)
+              .filter(DBExerciseEntry.user_id == user_id)
+              .all()
+        )
+        return [ExerciseEntry(
+            id               = r.id,
+            user_id          = r.user_id,
+            type             = r.type,
+            duration_minutes = r.duration_minutes,
+            timestamp        = r.timestamp,
+        ) for r in rows]
+
+def get_exercise_by_id(entry_id: int) -> Optional[ExerciseEntry]:
+    with get_db_session() as db:
+        r = db.query(DBExerciseEntry).get(entry_id)
+        if not r:
+            return None
+        return ExerciseEntry(
+            id    = r.id,
+            user_id = r.user_id,
+            type  = r.type,
+            duration_minutes = r.duration_minutes,
+            timestamp = r.timestamp,
+        )
+
+def create_exercise(data: ExerciseEntryCreate) -> ExerciseEntry:
+    with get_db_session() as db:
+        new = DBExerciseEntry(
+            user_id          = data.user_id,
+            type             = data.type,
+            duration_minutes = data.duration_minutes,
+            timestamp        = datetime.utcnow(),  # use the datetime import above
+        )
+        db.add(new)
+        db.commit()
+        db.refresh(new)
+        return ExerciseEntry(
+            id    = new.id,
+            user_id = new.user_id,
+            type  = new.type,
+            duration_minutes = new.duration_minutes,
+            timestamp = new.timestamp,
+        )
+
+def update_exercise(entry_id: int, data: ExerciseEntryUpdate) -> Optional[ExerciseEntry]:
+    with get_db_session() as db:
+        existing = db.query(DBExerciseEntry).get(entry_id)
+        if not existing:
+            return None
+        if data.type is not None:
+            existing.type = data.type
+        if data.duration_minutes is not None:
+            existing.duration_minutes = data.duration_minutes
+        db.commit()
+        db.refresh(existing)
+        return ExerciseEntry(
+            id    = existing.id,
+            user_id = existing.user_id,
+            type  = existing.type,
+            duration_minutes = existing.duration_minutes,
+            timestamp = existing.timestamp,
+        )
+
+def delete_exercise(entry_id: int) -> bool:
+    with get_db_session() as db:
+        existing = db.query(DBExerciseEntry).get(entry_id)
+        if not existing:
+            return False
+        db.delete(existing)
+        db.commit()
+        return True
 
 # ------------------------------------------------------------------
 # PROJECT MANAGEMENT FUNCTIONS

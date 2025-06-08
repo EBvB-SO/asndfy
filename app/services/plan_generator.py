@@ -10,9 +10,9 @@ import sys
 # Add parent directory to path to import from root
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import db.db_access as db
+import app.db.db_access as db
 
-from models.training_plan import PhasePlanRequest, FullPlanRequest
+from app.models.training_plan import PhasePlanRequest, FullPlanRequest
 from services.exercise_filter import ExerciseFilterService
 
 logger = logging.getLogger(__name__)

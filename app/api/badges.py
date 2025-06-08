@@ -9,10 +9,10 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import the db_access module as "db" so that db.get_badges, db.get_user_badges, etc. are available
-import db.db_access as db
+import app.db.db_access as db
 
-from models.badge import Badge
-from core.dependencies import get_current_user_email
+from app.models.badge import Badge
+from app.core.dependencies import get_current_user_email
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/badges", tags=["Badges"])

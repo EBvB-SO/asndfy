@@ -2,8 +2,8 @@
 import re
 import logging
 from typing import List, Dict, Any, Set
-from models.training_plan import PhasePlanRequest
-import db.db_access as db
+from app.models.training_plan import PhasePlanRequest
+import app.db.db_access as db
 
 logger = logging.getLogger(__name__)
 

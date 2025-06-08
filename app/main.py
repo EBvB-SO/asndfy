@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.core.redis import redis_client
 
 # Load .env into os.environ
 load_dotenv()
@@ -23,6 +24,7 @@ from app.api.daily_notes          import router as notes_router
 from app.api.badges               import router as badges_router
 from app.api.sessions             import router as sessions_router
 from app.api.exercise_tracking    import router as exercise_tracking_router
+from app.api.exercise_history import router as history_router
 
 # --- Configure logging ---
 logging.basicConfig(
@@ -61,6 +63,8 @@ app.include_router(badges_router,             tags=["Badges"])
 app.include_router(sessions_router,           tags=["Session Tracking"])
 app.include_router(exercise_tracking_router,  tags=["Exercise Tracking"])
 
+# Exercise-history CRUD
+app.include_router(history_router,            tags=["Exercise History"])
 
 @app.on_event("startup")
 async def startup_event():
@@ -98,6 +102,13 @@ async def startup_event():
         logger.info("✅ Migrations applied successfully")
     except Exception as e:
         logger.error(f"❌ Failed to run migrations: {e}")
+        # Verify Redis is reachable
+
+    try:
+        await redis_client.ping()
+        logger.info("✅ Redis connection OK")
+    except Exception as e:
+        logger.error(f"❌ Redis connection failed: {e}")
 
     # 3) Warn if OpenAI key missing
     if not os.getenv("OPENAI_API_KEY"):

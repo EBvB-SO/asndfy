@@ -1,9 +1,9 @@
 # backend/app/api/exercises.py
 from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Dict, Any
-from core.database import get_db
+from app.core.database import get_db
 from sqlalchemy.orm import Session
-from db.models import Exercise, ExerciseTarget
+from app.db.models import Exercise, ExerciseTarget
 
 router = APIRouter(prefix="/exercises", tags=["Exercises"])
 

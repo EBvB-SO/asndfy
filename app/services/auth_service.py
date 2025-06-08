@@ -1,8 +1,8 @@
 # services/auth_service.py
 import logging
 from typing import Optional, Dict, Any
-import db.db_access as db
-from models.auth_models import SignUpRequest, SignInRequest
+import app.db.db_access as db
+from app.models.auth_models import SignUpRequest, SignInRequest
 
 logger = logging.getLogger(__name__)
 

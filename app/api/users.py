@@ -3,11 +3,11 @@ from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional, List
 import logging
 
-from models.user import UserProfileData
-from core.dependencies import get_current_user_email
-from core.database import get_db
+from app.models.user import UserProfileData
+from app.core.dependencies import get_current_user_email
+from app.core.database import get_db
 from sqlalchemy.orm import Session
-from db.models import User, UserProfile, PendingSessionUpdate
+from app.db.models import User, UserProfile, PendingSessionUpdate
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/users", tags=["Users"])

@@ -11,16 +11,16 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import the db_access module as "db" so that db.get_user_projects, db.create_project, etc. are available
-import db.db_access as db
+import app.db.db_access as db
 
-from models.project import (
+from app.models.project import (
     ProjectCreate,
     ProjectUpdate,
     Project,
     ProjectLogCreate,
     ProjectLog
 )
-from core.dependencies import get_current_user_email
+from app.core.dependencies import get_current_user_email
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/projects", tags=["Projects"])

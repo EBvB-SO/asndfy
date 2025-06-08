@@ -12,21 +12,22 @@ def generate_uuid():
 class User(Base):
     __tablename__ = 'users'
     
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(255), nullable=False)
-    email = Column(String(255), unique=True, index=True, nullable=False)
+    id            = Column(Integer, primary_key=True, index=True)
+    name          = Column(String(255), nullable=False)
+    email         = Column(String(255), unique=True, index=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    last_login = Column(DateTime(timezone=True), nullable=True)
-    
+    created_at    = Column(DateTime(timezone=True), server_default=func.now())
+    last_login    = Column(DateTime(timezone=True), nullable=True)
+
     # Relationships
-    profile = relationship("UserProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
-    projects = relationship("Project", back_populates="user", cascade="all, delete-orphan")
-    training_plans = relationship("TrainingPlan", back_populates="user", cascade="all, delete-orphan")
-    daily_notes = relationship("DailyNote", back_populates="user", cascade="all, delete-orphan")
-    badges = relationship("UserBadge", back_populates="user", cascade="all, delete-orphan")
-    session_tracking = relationship("SessionTracking", back_populates="user", cascade="all, delete-orphan")
-    exercise_tracking = relationship("ExerciseTracking", back_populates="user", cascade="all, delete-orphan")
+    profile            = relationship("UserProfile",    back_populates="user", cascade="all, delete-orphan", uselist=False)
+    projects           = relationship("Project",        back_populates="user", cascade="all, delete-orphan")
+    training_plans     = relationship("TrainingPlan",   back_populates="user", cascade="all, delete-orphan")
+    daily_notes        = relationship("DailyNote",      back_populates="user", cascade="all, delete-orphan")
+    badges             = relationship("UserBadge",      back_populates="user", cascade="all, delete-orphan")
+    session_tracking   = relationship("SessionTracking",back_populates="user", cascade="all, delete-orphan")
+    exercise_tracking  = relationship("ExerciseTracking", back_populates="user", cascade="all, delete-orphan")
+    exercise_entries   = relationship("ExerciseEntry",  back_populates="user", cascade="all, delete-orphan")
 
 class UserProfile(Base):
     __tablename__ = 'user_profiles'
@@ -210,6 +211,18 @@ class ExerciseTracking(Base):
         Index('idx_exercise_tracking_exercise_id', 'exercise_id'),
         Index('idx_exercise_tracking_user_id', 'user_id'),
     )
+
+class ExerciseEntry(Base):
+    __tablename__ = "exercise_entries"
+
+    id               = Column(Integer, primary_key=True, index=True)
+    user_id          = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    type             = Column(String(100), nullable=False)
+    duration_minutes = Column(Integer, nullable=False)
+    timestamp        = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # Relationships
+    user = relationship("User", back_populates="exercise_entries")
 
 # Exercise library models
 class Exercise(Base):

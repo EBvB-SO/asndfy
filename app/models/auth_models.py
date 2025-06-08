@@ -1,5 +1,10 @@
 # models/auth_models.py
 from pydantic import BaseModel, EmailStr
+from typing      import Generic, TypeVar
+from pydantic import BaseModel
+
+
+T = TypeVar("T")
 
 class SignUpRequest(BaseModel):
     name: str
@@ -25,3 +30,10 @@ class ResetPasswordRequest(BaseModel):
     email: EmailStr
     code: str
     new_password: str
+
+class BaseResponse(BaseModel):
+    success: bool
+    message: str
+
+class DataResponse(BaseResponse, BaseModel, Generic[T]):
+    data: T
