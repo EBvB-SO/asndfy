@@ -43,6 +43,9 @@ async def get_sessions(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    # normalize planId
+    planId = planId.lower()
+
     sessions = (
         db.query(DBSessionTracking)
           .filter(
@@ -85,10 +88,12 @@ async def update_session(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    planId    = planId.lower()
+    sessionId = update.sessionId.lower()
     sess = (
         db.query(DBSessionTracking)
           .filter(
-              DBSessionTracking.id      == update.sessionId,
+              DBSessionTracking.id      == sessionId,
               DBSessionTracking.user_id == user.id,
               DBSessionTracking.plan_id == planId,
           )
@@ -107,10 +112,10 @@ async def update_session(
     else:
         # create new
         new_sess = DBSessionTracking(
-            id             = update.sessionId,
+            id             = sessionId,
             user_id        = user.id,
             plan_id        = planId,
-            week_number    = 1,            # you may choose to infer week/day from payload
+            week_number    = 1,
             day_of_week    = "Monday",
             focus_name     = "Unknown",
             is_completed   = update.isCompleted,
@@ -143,6 +148,7 @@ async def initialize_sessions(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    planId = planId.lower()
     already = (
         db.query(DBSessionTracking)
           .filter(
@@ -177,8 +183,7 @@ async def initialize_sessions(
 
         for week in range(start, end):
             for tmpl in templates:
-                new_s = DBSessionTracking(
-                    id           = str(uuid.uuid4()),
+                new_s = DBSessionTracking(id = str(uuid.uuid4()).lower(),
                     user_id      = user.id,
                     plan_id      = planId,
                     week_number  = week,

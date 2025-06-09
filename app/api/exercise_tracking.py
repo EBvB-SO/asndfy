@@ -40,11 +40,12 @@ async def get_exercises(
     if not user:
         raise HTTPException(404, "User not found")
 
+    planId = planId.lower()
     records = (
         db.query(DBExerciseTracking)
           .filter(
               DBExerciseTracking.user_id   == user.id,
-              DBExerciseTracking.plan_id   == planId,
++             DBExerciseTracking.plan_id   == planId,
           )
           .order_by(DBExerciseTracking.date.desc())
           .all()
@@ -78,9 +79,11 @@ async def add_or_update_exercise(
     user = db.query(User).filter(User.email == email).first()
     if not user:
         raise HTTPException(404, "User not found")
-
+    
+    planId = planId.lower()
+    rec_id = (tracking.id or str(uuid.uuid4())).lower()
     existing = db.query(DBExerciseTracking).filter(
-        DBExerciseTracking.id      == tracking.id,
+        DBExerciseTracking.id      == rec_id,
         DBExerciseTracking.user_id == user.id
     ).first()
 
@@ -92,7 +95,7 @@ async def add_or_update_exercise(
     else:
         # create
         new_record = DBExerciseTracking(
-            id          = tracking.id or str(uuid.uuid4()),
+            id          = rec_id,
             user_id     = user.id,
             plan_id     = planId,
             session_id  = tracking.sessionId,
@@ -121,6 +124,9 @@ async def get_exercise_history(
     user = db.query(User).filter(User.email == email).first()
     if not user:
         raise HTTPException(404, "User not found")
+
+    planId      = planId.lower()
+    exercise_id = exercise_id.lower()
 
     history = (
         db.query(DBExerciseTracking)
@@ -162,6 +168,8 @@ async def delete_exercise(
     if not user:
         raise HTTPException(404, "User not found")
 
+    planId     = planId.lower()
+    exercise_id = exercise_id.lower()
     record = (
         db.query(DBExerciseTracking)
           .filter(
