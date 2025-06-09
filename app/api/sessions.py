@@ -15,7 +15,7 @@ from app.db.models import (
     PlanPhase,
     PlanSession,
 )
-from app.models.session import SessionTracking, SessionTrackingUpdate
+from app.models.session import SessionTracking, SessionTrackingUpdateBody
 from app.core.dependencies import get_current_user_email
 from app.core.database import get_db
 
@@ -70,11 +70,12 @@ async def get_sessions(
         for s in sessions
     ]
 
-@router.post("", response_model=Dict[str, Any])
+@router.post("/{sessionId}", response_model=Dict[str, Any])
 async def update_session(
     email: str,
     planId: str,
-    update: SessionTrackingUpdate,
+    sessionId: str,                   
+    update: SessionTrackingUpdateBody,
     current_user: str = Depends(get_current_user_email),
     db: Session   = Depends(get_db),
 ) -> Dict[str, Any]:
@@ -89,7 +90,7 @@ async def update_session(
         raise HTTPException(status_code=404, detail="User not found")
 
     planId    = planId.lower()
-    sessionId = update.sessionId.lower()
+    sessionId = sessionId.lower() 
     sess = (
         db.query(DBSessionTracking)
           .filter(
@@ -104,10 +105,7 @@ async def update_session(
         # update existing
         sess.is_completed    = update.isCompleted
         sess.notes           = update.notes
-        sess.completion_date = (
-            datetime.fromisoformat(update.completionDate)
-            if update.completionDate else None
-        )
+        sess.completion_date = update.completionDate
         sess.updated_at      = datetime.utcnow()
     else:
         # create new
@@ -120,10 +118,7 @@ async def update_session(
             focus_name     = "Unknown",
             is_completed   = update.isCompleted,
             notes          = update.notes,
-            completion_date= (
-                datetime.fromisoformat(update.completionDate)
-                if update.completionDate else None
-            ),
+            completion_date=update.completionDate
         )
         db.add(new_sess)
 
