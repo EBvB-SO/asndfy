@@ -132,13 +132,17 @@ def get_user_profile(user_id: int) -> Optional[Dict[str, Any]]:
     """Get a user's profile by user ID."""
     with get_db_session() as db:
         try:
+            user = db.query(User).get(user_id)
             profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
-            if not profile:
-                return None
 
+            # If no profile row yet, still return the user's name
+            if not profile:
+                return {"user_id": user_id, "name": user.name}
+            
             return {
                 "id": profile.id,
                 "user_id": profile.user_id,
+                "name": user.name,
                 "current_climbing_grade": profile.current_climbing_grade,
                 "max_boulder_grade": profile.max_boulder_grade,
                 "goal": profile.goal,
@@ -178,22 +182,30 @@ def update_user_profile(user_id: int, profile_data: Dict[str, Any]) -> DBResult:
     """Update a user profile."""
     with get_db_session() as db:
         try:
+            # 1) update User.name if present
+            user = db.query(User).get(user_id)
+            if "name" in profile_data:
+                user.name = profile_data.pop("name")
+
+            # 2) update or create UserProfile
             profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
             if profile:
                 for key, value in profile_data.items():
                     if hasattr(profile, key):
                         setattr(profile, key, value)
             else:
-                profile = UserProfile(user_id=user_id, **profile_data)
+                profile = UserProfile(user_id=user.id, **profile_data)
                 db.add(profile)
 
+            # 3) commit everything
             db.commit()
             return DBResult(True, "Profile updated successfully")
+
         except Exception as e:
             db.rollback()
             logger.error(f"Error updating profile: {e}")
             return DBResult(False, f"Error updating profile: {e}")
-
+        
 
 # ------------------------------------------------------------------
 # EXERCISE MANAGEMENT FUNCTIONS

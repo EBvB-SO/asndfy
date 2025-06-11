@@ -32,11 +32,12 @@ def get_profile(
     profile = db.query(UserProfile).filter(UserProfile.user_id == user.id).first()
     
     if not profile:
-        # Return empty profile if none exists
-        return UserProfileData()
+        # No profile row yet, but still return their name from User
+        return UserProfileData(name=user.name)
     
     # Convert database fields to API model
     return UserProfileData(
+        name=user.name,
         current_climbing_grade=profile.current_climbing_grade,
         max_boulder_grade=profile.max_boulder_grade,
         goal=profile.goal,
@@ -90,8 +91,15 @@ def update_profile(
         profile = UserProfile(user_id=user.id)
         db.add(profile)
     
-    # Update profile fields
-    for field, value in profile_data.dict(exclude_unset=True).items():
+    # Pull out exactly what the client sent
+    data = profile_data.dict(exclude_unset=True)
+
+    # If they sent a name, save it to the User record (not UserProfile)
+    if 'name' in data:
+        user.name = data.pop('name')
+
+    # Now update the remaining attributes on the UserProfile
+    for field, value in data.items():
         setattr(profile, field, value)
     
     try:
