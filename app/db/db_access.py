@@ -3,6 +3,7 @@
 import logging
 import uuid
 from typing import List, Dict, Any, Optional
+from datetime import date, datetime
 
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime
@@ -579,7 +580,11 @@ def get_daily_notes_for_user(user_id: int) -> List[Dict[str, Any]]:
             return []
 
 
-def get_daily_notes_for_date_range(user_id: int, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+def get_daily_notes_for_date_range(
+    user_id:    int,
+    start_date: date,
+    end_date:   date
+) -> List[Dict[str, Any]]:
     """Get all daily notes for a user within a given date range (inclusive)."""
     with get_db_session() as db:
         try:

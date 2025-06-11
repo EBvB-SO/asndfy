@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, date
 import logging
 import sys
 import os
@@ -23,8 +23,8 @@ router = APIRouter(prefix="/daily_notes", tags=["Daily Notes"])
 @router.get("/{email}", response_model=List[DailyNote])
 def get_daily_notes(
     email: str,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date:   Optional[date] = None,
     current_user: str = Depends(get_current_user_email),
 ):
     """Get daily notes for a user, optionally filtered by date range."""
@@ -68,19 +68,18 @@ def create_daily_note(
             raise HTTPException(status_code=404, detail="User not found")
         user_id = user["id"]
 
-        # Create the note
+        # note.date is now a Python date (YYY-MM-DD)
         note_data = note.dict()
+        # hand off to your DB access layer, inserting a real Date field
         result = db.create_daily_note(user_id, note_data)
         if not result:
-            raise HTTPException(status_code=400, detail=result.message)
-
-        return {
-            "id": result.id,
-            **note_data,
-            "created_at": datetime.now().isoformat(),
-            "updated_at": datetime.now().isoformat()
-        }
-
+            raise HTTPException(400, detail="...")
+        
+        # fetch the freshly created row so we get the real timestamps
+        created: Optional[dict] = db.get_daily_note_by_id(result.id)
+        if not created:
+            raise HTTPException(500, detail="Could not load created note")
+        return created
 
 @router.put("/{email}/{note_id}")
 def update_daily_note(

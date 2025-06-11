@@ -1,8 +1,11 @@
-# models/daily_note.py
-from pydantic import BaseModel
+# app/models/daily_note.py
+from datetime import date, datetime
+from typing   import Optional
+from pydantic import BaseModel, Field
+from uuid     import UUID
 
 class DailyNoteBase(BaseModel):
-    date: str  # ISO format date
+    date: date
     content: str
 
 class DailyNoteCreate(DailyNoteBase):
@@ -12,6 +15,9 @@ class DailyNoteUpdate(BaseModel):
     content: str
 
 class DailyNote(DailyNoteBase):
-    id: str
-    created_at: str
-    updated_at: str
+    id: UUID
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        orm_mode = True

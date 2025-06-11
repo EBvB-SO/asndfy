@@ -1,5 +1,5 @@
 # db/models.py
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, Float, Index, CheckConstraint
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, Float, Index, CheckConstraint, Date
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -296,7 +296,7 @@ class DailyNote(Base):
     
     id = Column(String(36), primary_key=True, default=generate_uuid)
     user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
-    date = Column(String(10), nullable=False)  # ISO format date
+    date = Column(Date, nullable=False)
     content = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
