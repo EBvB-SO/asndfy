@@ -36,7 +36,7 @@ from .training_plan import (
 
 from .session import (
     SessionTracking,
-    SessionTrackingUpdate
+    SessionTrackingUpdateBody
 )
 
 from .daily_note import (

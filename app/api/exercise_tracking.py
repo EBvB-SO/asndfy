@@ -45,7 +45,7 @@ async def get_exercises(
         db.query(DBExerciseTracking)
           .filter(
               DBExerciseTracking.user_id   == user.id,
-+             DBExerciseTracking.plan_id   == planId,
+              DBExerciseTracking.plan_id   == planId,
           )
           .order_by(DBExerciseTracking.date.desc())
           .all()

@@ -9,7 +9,7 @@ class ExerciseTrackingBase(BaseModel):
     notes: str = ""
 
 class ExerciseTrackingCreate(ExerciseTrackingBase):
-    pass  # server will assign `id`
+    id: Optional[str] = None  # Optional ID for updates
 
 class ExerciseTrackingUpdate(BaseModel):
     session_id: Optional[str]
