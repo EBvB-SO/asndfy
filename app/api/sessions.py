@@ -65,7 +65,8 @@ async def get_sessions(
             focusName      = s.focus_name,
             isCompleted    = s.is_completed,
             notes          = s.notes or "",
-            completionDate = s.completion_date.isoformat() if s.completion_date else None
+            completionDate = s.completion_date,
+            updatedAt      = s.updated_at
         )
         for s in sessions
     ]
