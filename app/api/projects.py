@@ -81,6 +81,9 @@ def get_project(
     current_user: str = Depends(get_current_user_email)
 ):
     """Get a specific project with its logs."""
+    # normalize to lowercase so DB lookup always matches
+    project_id = project_id.lower()
+
     if email != current_user:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
@@ -113,6 +116,9 @@ def update_project(
     current_user: str = Depends(get_current_user_email)
 ):
     """Update a project."""
+    # normalize to lowercase so DB lookup always matches
+    project_id = project_id.lower()
+
     if email != current_user:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
@@ -146,6 +152,9 @@ def delete_project(
     current_user: str = Depends(get_current_user_email)
 ):
     """Delete a project."""
+    # normalize to lowercase so DB lookup always matches
+    project_id = project_id.lower()
+
     if email != current_user:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
@@ -172,6 +181,7 @@ def delete_project(
 
 
 # Project Log endpoints
+
 @router.post("/{email}/{project_id}/logs", response_model=ProjectLog)
 def add_project_log(
     email: str,
@@ -180,6 +190,9 @@ def add_project_log(
     current_user: str = Depends(get_current_user_email)
 ):
     """Add a log entry to a project."""
+    # normalize to lowercase so DB lookup always matches
+    project_id = project_id.lower()
+
     if email != current_user:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
@@ -219,6 +232,10 @@ def delete_project_log(
     current_user: str = Depends(get_current_user_email)
 ):
     """Delete a project log entry."""
+    # normalize to lowercase so DB lookup always matches
+    project_id = project_id.lower()
+    log_id     = log_id.lower()
+
     if email != current_user:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
@@ -253,6 +270,9 @@ def get_project_detail(
     """
     Get a project (with logs) by its ID, without the email in the path.
     """
+    # normalize to lowercase so DB lookup always matches
+    project_id = project_id.lower()
+
     # 1) Lookup owner
     with db.get_db_connection() as conn:
         cursor = conn.cursor()
@@ -291,6 +311,9 @@ def delete_log_entry(
     """
     Delete a log entry by its ID, without needing the project/email in the path.
     """
+    # normalize to lowercase so DB lookup always matches
+    log_id = log_id.lower()
+
     # 1) Find its project
     with db.get_db_connection() as conn:
         cursor = conn.cursor()
