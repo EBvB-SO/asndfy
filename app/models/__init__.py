@@ -6,7 +6,7 @@ Pydantic models for request/response validation
 from .auth_models import (
     SignUpRequest,
     SignInRequest,
-    ForgotPasswordRequest,
+    ForgotRequest,
     ForgotPasswordResponse,
     VerifyResetCodeRequest,
     ResetPasswordRequest
