@@ -364,10 +364,10 @@ def get_exercise_by_id(entry_id: int) -> Optional[ExerciseEntry]:
             timestamp = r.timestamp,
         )
 
-def create_exercise(data: ExerciseEntryCreate) -> ExerciseEntry:
+def create_exercise(data: ExerciseEntryCreate, user_id: str) -> ExerciseEntry:
     with get_db_session() as db:
         new = DBExerciseEntry(
-            user_id          = data.user_id,
+            user_id          = user_id,
             type             = data.type,
             duration_minutes = data.duration_minutes,
             timestamp        = datetime.utcnow(),  # use the datetime import above
@@ -383,9 +383,12 @@ def create_exercise(data: ExerciseEntryCreate) -> ExerciseEntry:
             timestamp = new.timestamp,
         )
 
-def update_exercise(entry_id: int, data: ExerciseEntryUpdate) -> Optional[ExerciseEntry]:
+def update_exercise(entry_id: int, data: ExerciseEntryUpdate, user_id: str) -> Optional[ExerciseEntry]:
     with get_db_session() as db:
-        existing = db.query(DBExerciseEntry).get(entry_id)
+        existing = db.query(DBExerciseEntry).filter(
+            DBExerciseEntry.id == entry_id,
+            DBExerciseEntry.user_id == user_id
+        ).first()
         if not existing:
             return None
         if data.type is not None:
@@ -402,9 +405,12 @@ def update_exercise(entry_id: int, data: ExerciseEntryUpdate) -> Optional[Exerci
             timestamp = existing.timestamp,
         )
 
-def delete_exercise(entry_id: int) -> bool:
+def delete_exercise(entry_id: int, user_id: str) -> bool:
     with get_db_session() as db:
-        existing = db.query(DBExerciseEntry).get(entry_id)
+        existing = db.query(DBExerciseEntry).filter(
+            DBExerciseEntry.id == entry_id,
+            DBExerciseEntry.user_id == user_id
+        ).first()
         if not existing:
             return False
         db.delete(existing)

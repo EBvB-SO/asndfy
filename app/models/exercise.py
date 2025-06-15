@@ -33,7 +33,6 @@ class ExerciseTracking(ExerciseTrackingBase):
 
 
 class ExerciseEntryBase(BaseModel):
-    user_id: str
     type: str
     duration_minutes: int
 
