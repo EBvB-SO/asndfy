@@ -12,7 +12,7 @@ def generate_uuid():
 class User(Base):
     __tablename__ = 'users'
     
-    id            = Column(Integer, primary_key=True, index=True)
+    id            = Column(String(36), primary_key=True, default=generate_uuid, index=True)
     name          = Column(String(255), nullable=False)
     email         = Column(String(255), unique=True, index=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
@@ -32,8 +32,8 @@ class User(Base):
 class UserProfile(Base):
     __tablename__ = 'user_profiles'
     
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), unique=True, nullable=False)
+    id      = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String(36), ForeignKey('users.id', ondelete='CASCADE'), unique=True, nullable=False)
     
     # Profile fields
     current_climbing_grade = Column(String(50))
@@ -73,8 +73,8 @@ class UserProfile(Base):
 class Project(Base):
     __tablename__ = 'projects'
     
-    id = Column(String(36), primary_key=True, default=generate_uuid)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    id      = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     route_name = Column(String(255), nullable=False)
     grade = Column(String(50), nullable=False)
     crag = Column(String(255), nullable=False)
@@ -108,8 +108,8 @@ class ProjectLog(Base):
 class TrainingPlan(Base):
     __tablename__ = 'training_plans'
     
-    id = Column(String(36), primary_key=True, default=generate_uuid)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    id      = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     route_name = Column(String(255), nullable=False)
     grade = Column(String(50), nullable=False)
     route_overview = Column(Text)
@@ -152,8 +152,8 @@ class PlanSession(Base):
 class SessionTracking(Base):
     __tablename__ = 'session_tracking'
     
-    id = Column(String(36), primary_key=True, default=generate_uuid)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    id      = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     plan_id = Column(String(36), ForeignKey('training_plans.id', ondelete='CASCADE'), nullable=False)
     week_number = Column(Integer, nullable=False)
     day_of_week = Column(String(50), nullable=False)
@@ -177,8 +177,8 @@ class SessionTracking(Base):
 class PendingSessionUpdate(Base):
     __tablename__ = 'pending_session_updates'
     
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    id      = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String(36), ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     plan_id = Column(String(36), ForeignKey('training_plans.id', ondelete='CASCADE'), nullable=False)
     session_id = Column(String(36), ForeignKey('session_tracking.id', ondelete='CASCADE'), nullable=False)
     is_completed = Column(Boolean, nullable=False)
@@ -190,8 +190,8 @@ class PendingSessionUpdate(Base):
 class ExerciseTracking(Base):
     __tablename__ = 'exercise_tracking'
     
-    id = Column(String(36), primary_key=True, default=generate_uuid)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    id      = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     plan_id = Column(String(36), ForeignKey('training_plans.id', ondelete='CASCADE'), nullable=False)
     session_id = Column(String(36), ForeignKey('session_tracking.id', ondelete='CASCADE'), nullable=False)
     exercise_id = Column(String(255), nullable=False)
@@ -216,7 +216,7 @@ class ExerciseEntry(Base):
     __tablename__ = "exercise_entries"
 
     id               = Column(Integer, primary_key=True, index=True)
-    user_id          = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id          = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     type             = Column(String(100), nullable=False)
     duration_minutes = Column(Integer, nullable=False)
     timestamp        = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -276,8 +276,8 @@ class Badge(Base):
 class UserBadge(Base):
     __tablename__ = 'user_badges'
     
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    id               = Column(Integer, primary_key=True, index=True)
+    user_id          = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     badge_id = Column(Integer, ForeignKey('badges.id', ondelete='CASCADE'), nullable=False)
     earned_at = Column(DateTime(timezone=True), server_default=func.now())
     
@@ -294,8 +294,8 @@ class UserBadge(Base):
 class DailyNote(Base):
     __tablename__ = 'daily_notes'
     
-    id = Column(String(36), primary_key=True, default=generate_uuid)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    id      = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     date = Column(Date, nullable=False)
     content = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

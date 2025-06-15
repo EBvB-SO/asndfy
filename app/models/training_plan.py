@@ -70,5 +70,5 @@ class TrainingPlanCreate(TrainingPlanBase):
 
 class TrainingPlan(TrainingPlanBase):
     id: str
-    user_id: int
+    user_id: str
     purchased_at: str

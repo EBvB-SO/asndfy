@@ -1,3 +1,6 @@
+# app/models/exercise.py
+from __future__ import annotations
+
 from pydantic import BaseModel
 from datetime import date, datetime
 from typing import Optional
@@ -15,13 +18,14 @@ class ExerciseTrackingCreate(ExerciseTrackingBase):
     id: Optional[str] = None
 
 class ExerciseTrackingUpdate(BaseModel):
-    session_id:   Optional[str] = None
-    exercise_id:  Optional[str] = None
-    date: Optional[datetime.date] = None
-    notes:        Optional[str]   = None
+    session_id:  Optional[str]     = None
+    exercise_id: Optional[str]     = None
+    date:        Optional[date]    = None
+    notes:       Optional[str]     = None
 
-    class Config:
-        orm_mode = True
+    model_config = {
+        "from_attributes": True,
+    }
 
 class ExerciseTracking(ExerciseTrackingBase):
     id:      str
@@ -29,7 +33,7 @@ class ExerciseTracking(ExerciseTrackingBase):
 
 
 class ExerciseEntryBase(BaseModel):
-    user_id: int
+    user_id: str
     type: str
     duration_minutes: int
 

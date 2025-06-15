@@ -40,7 +40,7 @@ class ProjectUpdate(BaseModel):
 
 class Project(ProjectBase):
     id: str
-    user_id: int
+    user_id: str
     is_completed: bool
     completion_date: Optional[str] = None
     created_at: str

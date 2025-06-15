@@ -129,7 +129,7 @@ def update_user_password(email: str, new_password: str) -> DBResult:
 # USER PROFILE FUNCTIONS
 # ------------------------------------------------------------------
 
-def get_user_profile(user_id: int) -> Optional[Dict[str, Any]]:
+def get_user_profile(user_id: str) -> Optional[Dict[str, Any]]:
     """Get a user's profile by user ID."""
     with get_db_session() as db:
         try:
@@ -179,7 +179,7 @@ def get_user_profile(user_id: int) -> Optional[Dict[str, Any]]:
             return None
 
 
-def update_user_profile(user_id: int, profile_data: Dict[str, Any]) -> DBResult:
+def update_user_profile(user_id: str, profile_data: Dict[str, Any]) -> DBResult:
     """Update a user profile."""
     with get_db_session() as db:
         try:
@@ -248,7 +248,7 @@ def add_exercise_target(exercise_id: int, target: str) -> DBResult:
             logger.error(f"Error adding exercise target: {e}")
             return DBResult(False, f"Error adding exercise target: {e}")
 
-def get_all_exercises(user_id: int) -> List[ExerciseEntry]:
+def get_all_exercises(user_id: str) -> List[ExerciseEntry]:
     with get_db_session() as db:
         rows = (
             db.query(DBExerciseEntry)
@@ -327,7 +327,7 @@ def delete_exercise(entry_id: int) -> bool:
 # PROJECT MANAGEMENT FUNCTIONS
 # ------------------------------------------------------------------
 
-def create_project(user_id: int, project_data: Dict[str, Any]) -> DBResult:
+def create_project(user_id: str, project_data: Dict[str, Any]) -> DBResult:
     """Create a new project."""
     with get_db_session() as db:
         try:
@@ -345,7 +345,7 @@ def create_project(user_id: int, project_data: Dict[str, Any]) -> DBResult:
             return DBResult(False, f"Error creating project: {e}")
 
 
-def get_user_projects(user_id: int) -> List[Dict[str, Any]]:
+def get_user_projects(user_id: str) -> List[Dict[str, Any]]:
     """Get all projects for a user with log counts."""
     with get_db_session() as db:
         try:
@@ -419,7 +419,7 @@ def get_project_logs(project_id: str) -> List[Dict[str, Any]]:
 # TRAINING PLAN / SESSION FUNCTIONS
 # ------------------------------------------------------------------
 
-def get_sessions_for_plan(user_id: int, plan_id: str) -> List[Dict[str, Any]]:
+def get_sessions_for_plan(user_id: str, plan_id: str) -> List[Dict[str, Any]]:
     """Get all tracking sessions for a specific user & plan."""
     with get_db_session() as db:
         try:
@@ -446,7 +446,7 @@ def get_sessions_for_plan(user_id: int, plan_id: str) -> List[Dict[str, Any]]:
             return []
 
 
-def create_sessions_for_plan(user_id: int, plan_id: str) -> DBResult:
+def create_sessions_for_plan(user_id: str, plan_id: str) -> DBResult:
     """
     Initialize tracking sessions for a plan based on PlanPhase → PlanSession hierarchy.
     Each PlanPhase.phase_order becomes week_number.
@@ -505,7 +505,7 @@ def create_sessions_for_plan(user_id: int, plan_id: str) -> DBResult:
 # PENDING SESSION UPDATES (Offline Sync)
 # ------------------------------------------------------------------
 
-def get_pending_updates(user_id: int) -> List[Dict[str, Any]]:
+def get_pending_updates(user_id: str) -> List[Dict[str, Any]]:
     """
     Retrieve all pending session updates (is_synced == False) for a user.
     """
@@ -555,7 +555,7 @@ def mark_update_synced(update_id: int) -> DBResult:
 # DAILY NOTES FUNCTIONS
 # ------------------------------------------------------------------
 
-def get_daily_notes_for_user(user_id: int) -> List[Dict[str, Any]]:
+def get_daily_notes_for_user(user_id: str) -> List[Dict[str, Any]]:
     """Get all daily notes for a user."""
     with get_db_session() as db:
         try:
@@ -581,7 +581,7 @@ def get_daily_notes_for_user(user_id: int) -> List[Dict[str, Any]]:
 
 
 def get_daily_notes_for_date_range(
-    user_id:    int,
+    user_id:    str,
     start_date: date,
     end_date:   date
 ) -> List[Dict[str, Any]]:
@@ -613,7 +613,7 @@ def get_daily_notes_for_date_range(
             return []
 
 
-def create_daily_note(user_id: int, note_data: Dict[str, Any]) -> DBResult:
+def create_daily_note(user_id: str, note_data: Dict[str, Any]) -> DBResult:
     """
     Create a new daily note.
     note_data should at least contain 'date' and 'content'.
@@ -704,7 +704,7 @@ def get_badges_for_category(category_id: int) -> List[Dict[str, Any]]:
             return []
 
 
-def award_badge_to_user(user_id: int, badge_id: int) -> DBResult:
+def award_badge_to_user(user_id: str, badge_id: int) -> DBResult:
     """Award a badge to a user (if not already earned)."""
     with get_db_session() as db:
         try:
@@ -734,7 +734,7 @@ def award_badge_to_user(user_id: int, badge_id: int) -> DBResult:
 # ------------------------------------------------------------------
 
 def track_exercise(
-    user_id: int,
+    user_id: str,
     plan_id: str,
     session_id: str,
     exercise_id: str,
@@ -794,7 +794,7 @@ def get_exercise_tracking_for_session(session_id: str) -> List[Dict[str, Any]]:
 # TRAINING PLAN CRUD
 # ------------------------------------------------------------------
 
-def create_training_plan(user_id: int, plan_data: Dict[str, Any]) -> DBResult:
+def create_training_plan(user_id: str, plan_data: Dict[str, Any]) -> DBResult:
     """
     Create a new TrainingPlan with nested phases & sessions.
     plan_data must include 'id', 'route_name', 'grade', and arrays of 'phases'.
