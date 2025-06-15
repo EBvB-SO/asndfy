@@ -8,17 +8,23 @@ class ExerciseTrackingBase(BaseModel):
     date: date
     notes: str = ""
 
+    class Config:
+        orm_mode = True
+
 class ExerciseTrackingCreate(ExerciseTrackingBase):
-    id: Optional[str] = None  # Optional ID for updates
+    id: Optional[str] = None
 
 class ExerciseTrackingUpdate(BaseModel):
-    session_id: Optional[str]
-    exercise_id: Optional[str]
-    date: Optional[date]
-    notes: Optional[str]
+    session_id:   Optional[str] = None
+    exercise_id:  Optional[str] = None
+    date: Optional[datetime.date] = None
+    notes:        Optional[str]   = None
+
+    class Config:
+        orm_mode = True
 
 class ExerciseTracking(ExerciseTrackingBase):
-    id: str
+    id:      str
     plan_id: str
 
 

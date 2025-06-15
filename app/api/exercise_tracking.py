@@ -53,12 +53,12 @@ async def get_exercises(
 
     return [
         ExerciseTracking(
-            id         = rec.id,
-            planId     = rec.plan_id,
-            sessionId  = rec.session_id,
-            exerciseId = rec.exercise_id,
-            date       = rec.date.isoformat(),
-            notes      = rec.notes or ""
+            id          = rec.id,
+            plan_id     = rec.plan_id,
+            session_id  = rec.session_id,
+            exercise_id = rec.exercise_id,
+            date        = rec.date,
+            notes       = rec.notes or ""
         )
         for rec in records
     ]
@@ -88,19 +88,17 @@ async def add_or_update_exercise(
     ).first()
 
     if existing:
-        # update
         existing.notes      = tracking.notes
-        existing.date       = datetime.fromisoformat(tracking.date)
+        existing.date       = tracking.date 
         existing.updated_at = datetime.utcnow()
     else:
-        # create
         new_record = DBExerciseTracking(
             id          = rec_id,
             user_id     = user.id,
             plan_id     = planId,
-            session_id  = tracking.sessionId,
-            exercise_id = tracking.exerciseId,
-            date        = datetime.fromisoformat(tracking.date),
+            session_id  = tracking.session_id,
+            exercise_id = tracking.exercise_id,
+            date        = tracking.date,
             notes       = tracking.notes
         )
         db.add(new_record)
@@ -141,16 +139,15 @@ async def get_exercise_history(
 
     return {
         "history": [
-            {
-                "id":        rec.id,
-                "date":      rec.date.isoformat(),
-                "notes":     rec.notes or "",
-                "updatedAt": rec.updated_at.isoformat() if rec.updated_at else None
-            }
-            for rec in history
+        {
+            "id":         rec.id,
+            "date":       rec.date.isoformat(),
+            "notes":      rec.notes or "",
+        "updated_at": rec.updated_at.isoformat() if rec.updated_at else None
+        }
+        for rec in history
         ]
     }
-
 
 @router.delete("/exercises/{exercise_id}")
 async def delete_exercise(
