@@ -14,11 +14,14 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Security(security))
     
     try:
         # Use the SECRET_KEY from environment or auth.py
-        secret_key = os.getenv("JWT_SECRET_KEY", os.getenv("SECRET_KEY", "your-secret-key-change-this-in-production"))
+        SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+        if not SECRET_KEY:
+            raise RuntimeError("Missing JWT_SECRET_KEY environment variable")
+
         
         payload = jwt.decode(
             token, 
-            secret_key,
+            SECRET_KEY,
             algorithms=["HS256"]
         )
         

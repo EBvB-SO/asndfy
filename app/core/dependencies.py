@@ -1,49 +1,24 @@
 # core/dependencies.py
-from fastapi import HTTPException, Security, Depends
+from fastapi import Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional
-import jwt
-from datetime import datetime
-import os
+
+from app.core.security import (
+    decode_token,
+    get_current_user_email as _get_current_user_email,
+    get_current_user_optional as _get_current_user_optional,
+)
 
 security = HTTPBearer()
 
-def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)):
-    """Verify JWT token from Authorization header"""
-    token = credentials.credentials
-    
-    try:
-        # Use the SECRET_KEY from environment or auth.py
-        secret_key = os.getenv("JWT_SECRET_KEY", os.getenv("SECRET_KEY", "your-secret-key-change-this-in-production"))
-        
-        payload = jwt.decode(
-            token, 
-            secret_key,
-            algorithms=["HS256"]
-        )
-        
-        # Check expiration
-        if datetime.utcnow() > datetime.fromtimestamp(payload['exp']):
-            raise HTTPException(status_code=401, detail="Token expired")
-            
-        return payload
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+    """FastAPI dependency: decode and return full token payload."""
+    return decode_token(credentials.credentials)
 
-def get_current_user_email(token_payload: dict = Depends(verify_token)) -> str:
-    """Extract user email from verified token"""
-    email = token_payload.get("email")
-    if not email:
-        raise HTTPException(status_code=401, detail="Invalid token payload")
-    return email
+def get_current_user_email(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
+    """FastAPI dependency: return the `email` claim from a Bearer token."""
+    return _get_current_user_email(credentials)
 
-def get_current_user_optional(credentials: Optional[HTTPAuthorizationCredentials] = Security(security)) -> Optional[str]:
-    """Get current user email if token is provided, None otherwise"""
-    if not credentials:
-        return None
-    
-    try:
-        token_payload = verify_token(credentials)
-        return token_payload.get("email")
-    except:
-        return None
+def get_current_user_optional(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)) -> Optional[str]:
+    """FastAPI dependency: `email` if token present and valid, else None."""
+    return _get_current_user_optional(credentials)
