@@ -7,6 +7,7 @@ from datetime import date, datetime
 
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime
+from contextlib import contextmanager
 
 from app.core.database import get_db_session, SessionLocal
 from app.models.exercise import ExerciseEntry, ExerciseEntryCreate, ExerciseEntryUpdate
@@ -57,14 +58,101 @@ class DBResult:
 
 
 # ------------------------------------------------------------------
-# Aliases for backward compatibility
-#
-#   get_db_connection → yields a session via context manager
-#   get_connection    → returns a raw SessionLocal() instance
+# Backward compatibility helpers
 # ------------------------------------------------------------------
 
-get_db_connection = get_db_session
-get_connection = SessionLocal  # old code expecting a “.cursor()”‐style handle can now do: db = get_connection()
+class ConnectionWrapper:
+    """Wrapper to provide cursor-like interface for SQLAlchemy session."""
+    
+    def __init__(self, session):
+        self.session = session
+        self._results = []
+        self._current_row = None
+    
+    def cursor(self):
+        """Return self as the cursor."""
+        return self
+    
+    def execute(self, query, params=None):
+        """Execute a raw SQL query."""
+        from sqlalchemy import text
+        
+        if params:
+            # Convert ? to :param for SQLAlchemy
+            # Count the number of ? and replace with :param0, :param1, etc.
+            if '?' in query:
+                for i, param in enumerate(params):
+                    query = query.replace('?', f':param{i}', 1)
+                params = {f'param{i}': p for i, p in enumerate(params)}
+            
+            result = self.session.execute(text(query), params)
+        else:
+            result = self.session.execute(text(query))
+        
+        if result.returns_rows:
+            self._results = result.fetchall()
+        else:
+            self._results = []
+        return self
+    
+    def fetchone(self):
+        """Fetch one row as a dict."""
+        if self._results:
+            row = self._results.pop(0)
+            # Convert Row object to dict
+            if hasattr(row, '_mapping'):
+                return dict(row._mapping)
+            elif hasattr(row, '_asdict'):
+                return row._asdict()
+            else:
+                # For older SQLAlchemy versions
+                return dict(row)
+        return None
+    
+    def fetchall(self):
+        """Fetch all rows as list of dicts."""
+        results = []
+        while self._results:
+            row = self.fetchone()
+            if row:
+                results.append(row)
+        return results
+    
+    def commit(self):
+        """Commit the transaction."""
+        self.session.commit()
+    
+    def rollback(self):
+        """Rollback the transaction."""
+        self.session.rollback()
+    
+    def close(self):
+        """Close the session."""
+        self.session.close()
+
+
+@contextmanager
+def get_db_connection():
+    """
+    Context manager that provides a connection-like interface.
+    This is for backward compatibility with code expecting cursor() method.
+    """
+    session = SessionLocal()
+    wrapper = ConnectionWrapper(session)
+    try:
+        yield wrapper
+    finally:
+        session.close()
+
+
+def get_connection():
+    """
+    Returns a connection wrapper for backward compatibility.
+    Note: Caller is responsible for closing this!
+    """
+    session = SessionLocal()
+    return ConnectionWrapper(session)
+
 
 # ------------------------------------------------------------------
 # USER MANAGEMENT FUNCTIONS

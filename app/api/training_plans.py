@@ -1,16 +1,20 @@
 # app/api/training_plans.py
 
 from fastapi import APIRouter, HTTPException, Depends
-from typing import List
+from typing import List, Dict, Any
 import logging
+import uuid
 
+from sqlalchemy.orm import Session
+from app.core.database import get_db
+from app.db.models import User, TrainingPlan as DBTrainingPlan, PlanPhase, PlanSession
 from app.models.training_plan import (
     PhasePlanRequest,
     FullPlanRequest,
-    TrainingPlan
+    TrainingPlan,
+    PlanPhaseBase,
+    PlanSessionBase
 )
-
-import app.db.db_access as db
 from app.services.plan_generator import PlanGeneratorService
 from app.core.dependencies import get_current_user_email
 
@@ -58,120 +62,239 @@ def generate_full_plan(
 @router.get("/{email}", response_model=List[TrainingPlan])
 def get_training_plans(
     email: str,
-    current_user: str = Depends(get_current_user_email)
+    current_user: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db)
 ):
     """Get all training plans for a user."""
     if email != current_user:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
-    with db.get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
-        user = cursor.fetchone()
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        user_id = user["id"]
-        plans = db.get_user_training_plans(user_id)
-        return plans
+    # Get user using SQLAlchemy ORM
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Get all training plans for the user
+    plans = db.query(DBTrainingPlan).filter(DBTrainingPlan.user_id == user.id).all()
+    
+    # Convert to response models
+    result = []
+    for plan in plans:
+        # Get phases for this plan
+        phases = []
+        db_phases = (
+            db.query(PlanPhase)
+            .filter(PlanPhase.plan_id == plan.id)
+            .order_by(PlanPhase.phase_order)
+            .all()
+        )
+        
+        for phase in db_phases:
+            # Get sessions for this phase
+            sessions = (
+                db.query(PlanSession)
+                .filter(PlanSession.phase_id == phase.id)
+                .order_by(PlanSession.session_order)
+                .all()
+            )
+            
+            weekly_schedule = [
+                PlanSessionBase(
+                    day=session.day,
+                    focus=session.focus,
+                    details=session.details
+                )
+                for session in sessions
+            ]
+            
+            phases.append(PlanPhaseBase(
+                phase_name=phase.phase_name,
+                description=phase.description,
+                weekly_schedule=weekly_schedule
+            ))
+        
+        result.append(TrainingPlan(
+            id=plan.id,
+            user_id=plan.user_id,
+            route_name=plan.route_name,
+            grade=plan.grade,
+            route_overview=plan.route_overview or "",
+            training_overview=plan.training_overview or "",
+            purchased_at=plan.purchased_at.isoformat(),
+            phases=phases
+        ))
+    
+    return result
 
 
 @router.get("/{email}/{plan_id}")
 def get_training_plan(
     email: str,
     plan_id: str,
-    current_user: str = Depends(get_current_user_email)
+    current_user: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db)
 ):
     """Get a specific training plan with all phases and sessions."""
     if email != current_user:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
-    # Verify ownership
-    with db.get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
-        user = cursor.fetchone()
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        user_id = user["id"]
-        cursor.execute(
-            "SELECT id FROM training_plans WHERE id = ? AND user_id = ?",
-            (plan_id, user_id)
-        )
-        if not cursor.fetchone():
-            raise HTTPException(status_code=404, detail="Training plan not found")
-
-    plan = db.get_training_plan(plan_id)
+    # Get user
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Get plan and verify ownership
+    plan = (
+        db.query(DBTrainingPlan)
+        .filter(DBTrainingPlan.id == plan_id, DBTrainingPlan.user_id == user.id)
+        .first()
+    )
     if not plan:
         raise HTTPException(status_code=404, detail="Training plan not found")
-    return plan
+
+    # Get phases and sessions
+    phases = []
+    db_phases = (
+        db.query(PlanPhase)
+        .filter(PlanPhase.plan_id == plan.id)
+        .order_by(PlanPhase.phase_order)
+        .all()
+    )
+    
+    for phase in db_phases:
+        sessions = (
+            db.query(PlanSession)
+            .filter(PlanSession.phase_id == phase.id)
+            .order_by(PlanSession.session_order)
+            .all()
+        )
+        
+        phase_dict = {
+            "id": phase.id,
+            "phase_name": phase.phase_name,
+            "description": phase.description,
+            "phase_order": phase.phase_order,
+            "sessions": [
+                {
+                    "id": session.id,
+                    "day": session.day,
+                    "focus": session.focus,
+                    "details": session.details,
+                    "session_order": session.session_order
+                }
+                for session in sessions
+            ]
+        }
+        phases.append(phase_dict)
+    
+    # Return full plan structure
+    return {
+        "id": plan.id,
+        "user_id": plan.user_id,
+        "route_name": plan.route_name,
+        "grade": plan.grade,
+        "route_overview": plan.route_overview,
+        "training_overview": plan.training_overview,
+        "purchased_at": plan.purchased_at.isoformat(),
+        "phases": phases
+    }
 
 
 @router.post("/{email}/save")
 def save_training_plan(
     email: str,
-    plan_data: dict,
-    current_user: str = Depends(get_current_user_email)
+    plan_data: Dict[str, Any],
+    current_user: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db)
 ):
     """Save a generated training plan."""
     if email != current_user:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
-    with db.get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
-        user = cursor.fetchone()
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        user_id = user["id"]
+    # Get user
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
 
-        # Extract plan info and phases
-        plan_info = {
-            "route_name": plan_data.get("route_name", ""),
-            "grade": plan_data.get("grade", ""),
-            "route_overview": plan_data.get("route_overview", ""),
-            "training_overview": plan_data.get("training_overview", "")
-        }
-        phases = plan_data.get("phases", [])
+    # Create the training plan
+    new_plan = DBTrainingPlan(
+        id=str(uuid.uuid4()),
+        user_id=user.id,
+        route_name=plan_data.get("route_name", ""),
+        grade=plan_data.get("grade", ""),
+        route_overview=plan_data.get("route_overview", ""),
+        training_overview=plan_data.get("training_overview", "")
+    )
+    db.add(new_plan)
+    db.flush()  # Flush to get the plan ID before adding phases
 
-        # Save the plan
-        result = db.create_training_plan(user_id, plan_info, phases)
-        if not result:
-            raise HTTPException(status_code=400, detail=result.message)
+    # Add phases and sessions
+    for phase_order, phase_data in enumerate(plan_data.get("phases", []), start=1):
+        new_phase = PlanPhase(
+            plan_id=new_plan.id,
+            phase_name=phase_data.get("phase_name", ""),
+            description=phase_data.get("description", ""),
+            phase_order=phase_order
+        )
+        db.add(new_phase)
+        db.flush()  # Flush to get the phase ID
 
+        # Add sessions for this phase
+        for session_order, session_data in enumerate(phase_data.get("weekly_schedule", []), start=1):
+            new_session = PlanSession(
+                phase_id=new_phase.id,
+                day=session_data.get("day", ""),
+                focus=session_data.get("focus", ""),
+                details=session_data.get("details", ""),
+                session_order=session_order
+            )
+            db.add(new_session)
+
+    try:
+        db.commit()
         return {
             "success": True,
             "message": "Training plan saved successfully",
-            "plan_id": result.id
+            "plan_id": new_plan.id
         }
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error saving training plan: {e}")
+        raise HTTPException(status_code=400, detail="Failed to save training plan")
 
 
 @router.delete("/{email}/{plan_id}")
 def delete_training_plan(
     email: str,
     plan_id: str,
-    current_user: str = Depends(get_current_user_email)
+    current_user: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db)
 ):
     """Delete a training plan."""
     if email != current_user:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
-    # Verify ownership
-    with db.get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
-        user = cursor.fetchone()
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        user_id = user["id"]
-        cursor.execute(
-            "SELECT id FROM training_plans WHERE id = ? AND user_id = ?",
-            (plan_id, user_id)
-        )
-        if not cursor.fetchone():
-            raise HTTPException(status_code=404, detail="Training plan not found")
+    # Get user
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Get plan and verify ownership
+    plan = (
+        db.query(DBTrainingPlan)
+        .filter(DBTrainingPlan.id == plan_id, DBTrainingPlan.user_id == user.id)
+        .first()
+    )
+    if not plan:
+        raise HTTPException(status_code=404, detail="Training plan not found")
 
-    result = db.delete_training_plan(plan_id)
-    if not result:
-        raise HTTPException(status_code=400, detail=result.message)
-
-    return {"success": True, "message": "Training plan deleted successfully"}
+    # Delete the plan (phases and sessions will be cascade deleted)
+    db.delete(plan)
+    
+    try:
+        db.commit()
+        return {"success": True, "message": "Training plan deleted successfully"}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error deleting training plan: {e}")
+        raise HTTPException(status_code=400, detail="Failed to delete training plan")

@@ -8,6 +8,7 @@ from typing import List, Dict, Any
 
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.db.models import (
     User,
@@ -71,60 +72,69 @@ async def get_sessions(
         for s in sessions
     ]
 
+from sqlalchemy.exc import SQLAlchemyError
+
 @router.post("/{sessionId}", response_model=Dict[str, Any])
 async def update_session(
     email: str,
     planId: str,
-    sessionId: str,                   
+    sessionId: str,
     update: SessionTrackingUpdateBody,
     current_user: str = Depends(get_current_user_email),
     db: Session   = Depends(get_db),
 ) -> Dict[str, Any]:
-    """
-    Update an existing session or create a new one if it doesn't exist.
-    """
     if email != current_user:
-        raise HTTPException(status_code=403, detail="Unauthorized")
+        raise HTTPException(403, "Unauthorized")
 
     user = db.query(User).filter(User.email == email).first()
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(404, "User not found")
 
-    planId    = planId.lower()
-    sessionId = sessionId.lower() 
-    sess = (
-        db.query(DBSessionTracking)
-          .filter(
-              DBSessionTracking.id      == sessionId,
-              DBSessionTracking.user_id == user.id,
-              DBSessionTracking.plan_id == planId,
-          )
-          .first()
-    )
-
-    if sess:
-        # update existing
-        sess.is_completed    = update.isCompleted
-        sess.notes           = update.notes
-        sess.completion_date = update.completionDate
-        sess.updated_at      = datetime.utcnow()
-    else:
-        # create new
-        new_sess = DBSessionTracking(
-            id             = sessionId,
-            user_id        = user.id,
-            plan_id        = planId,
-            week_number    = 1,
-            day_of_week    = "Monday",
-            focus_name     = "Unknown",
-            is_completed   = update.isCompleted,
-            notes          = update.notes,
-            completion_date=update.completionDate
+    try:
+        sess = (
+            db.query(DBSessionTracking)
+              .filter(
+                  DBSessionTracking.id      == sessionId,
+                  DBSessionTracking.user_id == user.id,
+                  DBSessionTracking.plan_id == planId.lower(),
+              )
+              .first()
         )
-        db.add(new_sess)
 
-    db.commit()
-    return {"success": True, "message": "Session updated successfully"}
+        if sess:
+            # update existing
+            sess.is_completed    = update.isCompleted
+            sess.notes           = update.notes
+            sess.completion_date = update.completionDate
+            sess.updated_at      = datetime.utcnow()
+        else:
+            # create new
+            new_sess = DBSessionTracking(
+                id             = sessionId.lower(),
+                user_id        = user.id,
+                plan_id        = planId.lower(),
+                week_number    = 1,
+                day_of_week    = "Monday",
+                focus_name     = "Unknown",
+                is_completed   = update.isCompleted,
+                notes          = update.notes,
+                completion_date=update.completionDate
+            )
+            db.add(new_sess)
+
+        db.commit()
+        return {"success": True, "message": "Session updated successfully"}
+
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.exception("Error updating session %s for user %s", sessionId, email)
+        raise HTTPException(
+            status_code=500,
+            detail="Could not update session, please try again later."
+        )
+
+
+from sqlalchemy.exc import SQLAlchemyError
 
 @router.post("/initialize", response_model=Dict[str, Any])
 async def initialize_sessions(
@@ -156,52 +166,64 @@ async def initialize_sessions(
     if already > 0:
         return {"success": True, "message": "Sessions already initialized"}
 
-    phases = (
-        db.query(PlanPhase)
-          .filter(PlanPhase.plan_id == planId)
-          .order_by(PlanPhase.phase_order)
-          .all()
-    )
-
-    created: List[Dict[str, Any]] = []
-    for phase in phases:
-        match = re.search(r"weeks?\s+(\d+)-(\d+)", phase.phase_name.lower())
-        if not match:
-            continue
-        start, end = int(match.group(1)), int(match.group(2)) + 1
-
-        templates = (
-            db.query(PlanSession)
-              .filter(PlanSession.phase_id == phase.id)
-              .order_by(PlanSession.session_order)
+    # Everything below will run inside the try/except
+    try:
+        phases = (
+            db.query(PlanPhase)
+              .filter(PlanPhase.plan_id == planId)
+              .order_by(PlanPhase.phase_order)
               .all()
         )
 
-        for week in range(start, end):
-            for tmpl in templates:
-                new_s = DBSessionTracking(id = str(uuid.uuid4()).lower(),
-                    user_id      = user.id,
-                    plan_id      = planId,
-                    week_number  = week,
-                    day_of_week  = tmpl.day,
-                    focus_name   = tmpl.focus,
-                    is_completed = False,
-                    notes        = "",
-                )
-                db.add(new_s)
-                created.append({
-                    "id":           new_s.id,
-                    "planId":       planId,
-                    "weekNumber":   week,
-                    "dayOfWeek":    tmpl.day,
-                    "focusName":    tmpl.focus,
-                    "isCompleted":  False,
-                    "notes":        ""
-                })
+        created: List[Dict[str, Any]] = []
+        for phase in phases:
+            match = re.search(r"weeks?\s+(\d+)-(\d+)", phase.phase_name.lower())
+            if not match:
+                continue
+            start, end = int(match.group(1)), int(match.group(2)) + 1
 
-    db.commit()
-    return {
-        "success":  True,
-        "message":  f"Created {len(created)} sessions",
-        "sessions": created
-    }
+            templates = (
+                db.query(PlanSession)
+                  .filter(PlanSession.phase_id == phase.id)
+                  .order_by(PlanSession.session_order)
+                  .all()
+            )
+
+            for week in range(start, end):
+                for tmpl in templates:
+                    new_s = DBSessionTracking(
+                        id             = str(uuid.uuid4()).lower(),
+                        user_id        = user.id,
+                        plan_id        = planId,
+                        week_number    = week,
+                        day_of_week    = tmpl.day,
+                        focus_name     = tmpl.focus,
+                        is_completed   = False,
+                        notes          = "",
+                    )
+                    db.add(new_s)
+                    created.append({
+                        "id":           new_s.id,
+                        "planId":       planId,
+                        "weekNumber":   week,
+                        "dayOfWeek":    tmpl.day,
+                        "focusName":    tmpl.focus,
+                        "isCompleted":  False,
+                        "notes":        ""
+                    })
+
+        # commit once everything is added
+        db.commit()
+        return {
+            "success":  True,
+            "message":  f"Created {len(created)} sessions",
+            "sessions": created
+        }
+
+    except SQLAlchemyError:
+        db.rollback()
+        logger.exception("Failed initializing sessions for %s", email)
+        raise HTTPException(
+            status_code=500,
+            detail="Could not initialize sessions, please try again later."
+        )

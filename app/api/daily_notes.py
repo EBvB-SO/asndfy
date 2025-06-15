@@ -1,18 +1,13 @@
-# app/api/daily_notes.py
-
+# Fixed app/api/daily_notes.py
 from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Optional
 from datetime import datetime, date
 import logging
-import sys
-import os
+import uuid
 
-# Add parent directory to path to import from root
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-# Import the db_access module as "db"
-import app.db.db_access as db
-
+from sqlalchemy.orm import Session
+from app.core.database import get_db
+from app.db.models import User, DailyNote as DBDailyNote
 from app.models.daily_note import DailyNoteCreate, DailyNoteUpdate, DailyNote
 from app.core.dependencies import get_current_user_email
 
@@ -24,29 +19,31 @@ router = APIRouter(prefix="/daily_notes", tags=["Daily Notes"])
 def get_daily_notes(
     email: str,
     start_date: Optional[date] = None,
-    end_date:   Optional[date] = None,
+    end_date: Optional[date] = None,
     current_user: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db),
 ):
     """Get daily notes for a user, optionally filtered by date range."""
     if email != current_user:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
-    with db.get_db_connection() as conn:
-        cursor = conn.cursor()
-        # Get user_id from email
-        cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
-        user = cursor.fetchone()
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        user_id = user["id"]
+    # Get user using SQLAlchemy ORM
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
 
-        # Get notes based on date range if provided
-        if start_date and end_date:
-            notes = db.get_daily_notes_for_date_range(user_id, start_date, end_date)
-        else:
-            notes = db.get_daily_notes_for_user(user_id)
-
-        return notes
+    # Build query
+    query = db.query(DBDailyNote).filter(DBDailyNote.user_id == user.id)
+    
+    # Apply date filters if provided
+    if start_date:
+        query = query.filter(DBDailyNote.date >= start_date)
+    if end_date:
+        query = query.filter(DBDailyNote.date <= end_date)
+    
+    # Execute query and return results
+    notes = query.order_by(DBDailyNote.date).all()
+    return notes
 
 
 @router.post("/{email}", response_model=DailyNote)
@@ -54,32 +51,35 @@ def create_daily_note(
     email: str,
     note: DailyNoteCreate,
     current_user: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db),
 ):
     """Create a new daily note."""
     if email != current_user:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
-    with db.get_db_connection() as conn:
-        cursor = conn.cursor()
-        # Get user_id from email
-        cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
-        user = cursor.fetchone()
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        user_id = user["id"]
+    # Get user using SQLAlchemy ORM
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
 
-        # note.date is now a Python date (YYY-MM-DD)
-        note_data = note.dict()
-        # hand off to your DB access layer, inserting a real Date field
-        result = db.create_daily_note(user_id, note_data)
-        if not result:
-            raise HTTPException(400, detail="...")
-        
-        # fetch the freshly created row so we get the real timestamps
-        created: Optional[dict] = db.get_daily_note_by_id(result.id)
-        if not created:
-            raise HTTPException(500, detail="Could not load created note")
-        return created
+    # Create new note
+    new_note = DBDailyNote(
+        id=str(uuid.uuid4()),
+        user_id=user.id,
+        date=note.date,
+        content=note.content
+    )
+    db.add(new_note)
+    
+    try:
+        db.commit()
+        db.refresh(new_note)
+        return new_note
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error creating daily note: {e}")
+        raise HTTPException(status_code=400, detail="Failed to create daily note")
+
 
 @router.put("/{email}/{note_id}")
 def update_daily_note(
@@ -87,35 +87,37 @@ def update_daily_note(
     note_id: str,
     update: DailyNoteUpdate,
     current_user: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db),
 ):
     """Update an existing daily note."""
     if email != current_user:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
-    # First verify the user owns this note
-    with db.get_db_connection() as conn:
-        cursor = conn.cursor()
-        # Get user_id from email
-        cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
-        user = cursor.fetchone()
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        user_id = user["id"]
+    # Get user
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
 
-        # Verify ownership
-        cursor.execute("""
-            SELECT id FROM daily_notes 
-            WHERE id = ? AND user_id = ?
-        """, (note_id, user_id))
-        if not cursor.fetchone():
-            raise HTTPException(status_code=404, detail="Daily note not found")
+    # Get and verify ownership of the note
+    note = (
+        db.query(DBDailyNote)
+        .filter(DBDailyNote.id == note_id, DBDailyNote.user_id == user.id)
+        .first()
+    )
+    if not note:
+        raise HTTPException(status_code=404, detail="Daily note not found")
 
     # Update the note
-    result = db.update_daily_note(note_id, update.content)
-    if not result:
-        raise HTTPException(status_code=400, detail=result.message)
-
-    return {"success": True, "message": "Daily note updated successfully"}
+    note.content = update.content
+    note.updated_at = datetime.utcnow()
+    
+    try:
+        db.commit()
+        return {"success": True, "message": "Daily note updated successfully"}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error updating daily note: {e}")
+        raise HTTPException(status_code=400, detail="Failed to update daily note")
 
 
 @router.delete("/{email}/{note_id}")
@@ -123,32 +125,33 @@ def delete_daily_note(
     email: str,
     note_id: str,
     current_user: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db),
 ):
     """Delete a daily note."""
     if email != current_user:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
-    # First verify the user owns this note
-    with db.get_db_connection() as conn:
-        cursor = conn.cursor()
-        # Get user_id from email
-        cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
-        user = cursor.fetchone()
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        user_id = user["id"]
+    # Get user
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
 
-        # Verify ownership
-        cursor.execute("""
-            SELECT id FROM daily_notes 
-            WHERE id = ? AND user_id = ?
-        """, (note_id, user_id))
-        if not cursor.fetchone():
-            raise HTTPException(status_code=404, detail="Daily note not found")
+    # Get and verify ownership of the note
+    note = (
+        db.query(DBDailyNote)
+        .filter(DBDailyNote.id == note_id, DBDailyNote.user_id == user.id)
+        .first()
+    )
+    if not note:
+        raise HTTPException(status_code=404, detail="Daily note not found")
 
     # Delete the note
-    result = db.delete_daily_note(note_id)
-    if not result:
-        raise HTTPException(status_code=400, detail=result.message)
-
-    return {"success": True, "message": "Daily note deleted successfully"}
+    db.delete(note)
+    
+    try:
+        db.commit()
+        return {"success": True, "message": "Daily note deleted successfully"}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error deleting daily note: {e}")
+        raise HTTPException(status_code=400, detail="Failed to delete daily note")

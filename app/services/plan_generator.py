@@ -21,12 +21,16 @@ class PlanGeneratorService:
     """Service for generating training plans using OpenAI"""
     
     def __init__(self):
+        # Fail fast if the API key isn’t configured
         self.openai_api_key = os.getenv("OPENAI_API_KEY")
-        if self.openai_api_key:
-            openai.api_key = self.openai_api_key
-        else:
-            logger.warning("OPENAI_API_KEY not set - plan generation will not work")
-        
+        if not self.openai_api_key:
+            logger.error("Missing OPENAI_API_KEY environment variable.")
+            raise EnvironmentError("Missing OPENAI_API_KEY environment variable.")
+
+        # Configure OpenAI client
+        openai.api_key = self.openai_api_key
+
+        # Initialize auxiliary services
         self.exercise_filter = ExerciseFilterService()
     
     def analyze_route(self, route_name: str, grade: str, crag: str, user_data: PhasePlanRequest = None) -> dict:
