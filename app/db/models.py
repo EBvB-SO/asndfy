@@ -6,7 +6,7 @@ from app.core.database import Base
 import uuid
 
 def generate_uuid():
-    return str(uuid.uuid4())
+    return str(uuid.uuid4()).lower()
 
 # User related models
 class User(Base):
