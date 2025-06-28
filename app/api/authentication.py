@@ -10,7 +10,7 @@ from pydantic import BaseModel, EmailStr
 from app.core.redis import redis_client
 from app.db.db_access import create_user, verify_user, update_user_password
 from app.services.email_service import send_welcome_email, send_password_reset_email
-from app.core.security import create_access_token
+from app.core.security import create_access_token, create_refresh_token
 from app.models.auth_models import (
     SignUpRequest,
     SignInRequest,
@@ -54,12 +54,21 @@ async def signin(data: SignInRequest):
         "email": data.email,
         "user_id": result.data["id"]
     })
+
+    token_data = {
+        "email": data.email,
+        "user_id": result.data["id"]
+    }
+    access_token = create_access_token(token_data)
+    refresh_token = create_refresh_token(token_data)
+
     return DataResponse(
         success=True,
         message="Signed in successfully.",
         data={
             "access_token": token,
             "token_type": "bearer",
+            "refresh_token": refresh_token,
             "email": data.email,
             "user_id": result.data["id"],
         },

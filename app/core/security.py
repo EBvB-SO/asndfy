@@ -8,36 +8,56 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, HTTPBearer, HTTPAuthorizationCredentials
 from types import SimpleNamespace
 
+# ─── JWT EXPIRATION CONSTS ────────────────────────────────────────────────────
+# Access tokens live minutes, refresh tokens live days
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+REFRESH_TOKEN_EXPIRE_DAYS  = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
+
 # Load and validate secret
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 if not JWT_SECRET_KEY:
     raise RuntimeError("Missing JWT_SECRET_KEY environment variable")
 
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Schemes
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/signin")
-bearer_scheme = HTTPBearer()
+oauth2_scheme  = OAuth2PasswordBearer(tokenUrl="/auth/signin")
+bearer_scheme  = HTTPBearer()
 
 # Utility functions
-
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
-
 
 def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    """Create a JWT access token with expiration."""
+    """
+    Create a JWT access token with expiration and a 'type' field.
+    """
     to_encode = data.copy()
     expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire})
+    to_encode.update({
+        "exp":  expire,
+        "type": "access"
+    })
+    return jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=ALGORITHM)
+
+
+def create_refresh_token(data: dict) -> str:
+    """
+    Create a JWT refresh token with longer expiration and a 'type' field.
+    """
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    to_encode.update({
+        "exp":  expire,
+        "type": "refresh"
+    })
     return jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=ALGORITHM)
 
 
@@ -68,7 +88,9 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> SimpleNamespace:
     return SimpleNamespace(id=int(user_id))
 
 
-def get_current_user_email(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)) -> str:
+def get_current_user_email(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)
+) -> str:
     """FastAPI dependency: return the `email` claim from a Bearer token."""
     token = credentials.credentials
     payload = decode_token(token)
@@ -81,7 +103,9 @@ def get_current_user_email(credentials: HTTPAuthorizationCredentials = Depends(b
     return email
 
 
-def get_current_user_optional(credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)) -> Optional[str]:
+def get_current_user_optional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)
+) -> Optional[str]:
     """FastAPI dependency: `email` if token present and valid, else None."""
     if not credentials:
         return None
