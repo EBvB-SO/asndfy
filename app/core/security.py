@@ -11,7 +11,7 @@ from types import SimpleNamespace
 # ─── JWT EXPIRATION CONSTS ────────────────────────────────────────────────────
 # Access tokens live minutes, refresh tokens live days
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
-REFRESH_TOKEN_EXPIRE_DAYS  = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
+REFRESH_TOKEN_EXPIRE_DAYS   = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS",  "30"))
 
 # Load and validate secret
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
@@ -24,8 +24,8 @@ ALGORITHM = os.getenv("ALGORITHM", "HS256")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Schemes
-oauth2_scheme  = OAuth2PasswordBearer(tokenUrl="/auth/signin")
-bearer_scheme  = HTTPBearer()
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/signin")
+bearer_scheme = HTTPBearer()
 
 # Utility functions
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -37,12 +37,12 @@ def get_password_hash(password: str) -> str:
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """
-    Create a JWT access token with expiration and a 'type' field.
+    Create a JWT access token with expiration and a 'type' claim.
     """
     to_encode = data.copy()
     expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode.update({
-        "exp":  expire,
+        "exp": expire,
         "type": "access"
     })
     return jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=ALGORITHM)
@@ -50,12 +50,12 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 
 def create_refresh_token(data: dict) -> str:
     """
-    Create a JWT refresh token with longer expiration and a 'type' field.
+    Create a JWT refresh token with longer expiration and a 'type' claim.
     """
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     to_encode.update({
-        "exp":  expire,
+        "exp": expire,
         "type": "refresh"
     })
     return jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=ALGORITHM)

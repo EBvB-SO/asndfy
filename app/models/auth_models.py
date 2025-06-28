@@ -1,19 +1,21 @@
 # models/auth_models.py
 from pydantic import BaseModel, EmailStr
-from typing      import Generic, TypeVar
+from typing import Generic, TypeVar, Optional
 from pydantic import BaseModel
-
 
 T = TypeVar("T")
 
 class SignUpRequest(BaseModel):
     name: str
-    email: str
+    email: EmailStr
     password: str
 
 class SignInRequest(BaseModel):
-    email: str
+    email: EmailStr
     password: str
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
 
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
@@ -34,6 +36,7 @@ class ResetPasswordRequest(BaseModel):
 class BaseResponse(BaseModel):
     success: bool
     message: str
+    data: Optional[T]
 
 class DataResponse(BaseResponse, BaseModel, Generic[T]):
     data: T
