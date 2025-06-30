@@ -13,3 +13,6 @@ class Badge(BadgeBase):
     id: int
     category_id: int
     earned_at: Optional[str] = None
+
+    class Config:
+        orm_mode = True

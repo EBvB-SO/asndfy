@@ -5,23 +5,24 @@ import logging
 
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.db.models import User, Badge, UserBadge
+from app.db.models import Badge as BadgeModel, User, UserBadge
+from app.models.badge import Badge as BadgeSchema
 from app.core.dependencies import get_current_user_email
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/badges", tags=["Badges"])
 
-@router.get("/", response_model=List[Badge])
+@router.get("/", response_model=List[BadgeSchema])
 def get_all_badges(
     current_user: str = Depends(get_current_user_email),
     db: Session = Depends(get_db),
 ):
     """Get all available badges."""
-    badges = db.query(Badge).all()
+    badges = db.query(BadgeModel).all()
     return badges
 
 
-@router.get("/{email}", response_model=List[Badge])
+@router.get("/{email}", response_model=List[BadgeSchema])
 def get_user_badges(
     email: str, 
     current_user: str = Depends(get_current_user_email),
@@ -38,7 +39,7 @@ def get_user_badges(
     
     # Get badges through the relationship or with a join
     user_badges = (
-        db.query(Badge)
+        db.query(BadgeModel)
         .join(UserBadge)
         .filter(UserBadge.user_id == user.id)
         .all()
@@ -64,7 +65,7 @@ def award_badge(
         raise HTTPException(status_code=404, detail="User not found")
     
     # Check if badge exists
-    badge = db.query(Badge).filter(Badge.id == badge_id).first()
+    badge = db.query(BadgeModel).filter(BadgeModel.id == badge_id).first()
     if not badge:
         raise HTTPException(status_code=404, detail="Badge not found")
     

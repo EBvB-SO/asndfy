@@ -40,3 +40,6 @@ class BaseResponse(BaseModel):
 
 class DataResponse(BaseResponse, BaseModel, Generic[T]):
     data: T
+
+class ForgotRequest(BaseModel):
+    email: str
