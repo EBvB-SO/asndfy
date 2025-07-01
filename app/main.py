@@ -5,8 +5,11 @@ import sys
 import logging
 from dotenv import load_dotenv
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+
 from app.core.redis import redis_client
 
 # Load .env into os.environ
@@ -24,7 +27,7 @@ from app.api.daily_notes          import router as notes_router
 from app.api.badges               import router as badges_router
 from app.api.sessions             import router as sessions_router
 from app.api.exercise_tracking    import router as exercise_tracking_router
-from app.api.exercise_history import router as history_router
+from app.api.exercise_history     import router as history_router
 
 # --- Configure logging ---
 logging.basicConfig(
@@ -44,13 +47,27 @@ app = FastAPI(
     description = "API for personalized climbing training plans"
 )
 
+# --- Validation‐error handler (logs raw body + errors) ---
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    raw_body = await request.body()
+    logger.error(
+        f"\n❗️ Validation error for {request.url.path}\n"
+        f"Raw JSON was:\n{raw_body.decode('utf-8')}\n"
+        f"Errors:\n{exc.errors()!r}"
+    )
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors()},
+    )
+
 # --- CORS (allow your frontend origin here) ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins   = ["*"],
+    allow_origins     = ["*"],
     allow_credentials = True,
-    allow_methods   = ["*"],
-    allow_headers   = ["*"],
+    allow_methods     = ["*"],
+    allow_headers     = ["*"],
 )
 
 # --- Include all routers ---
@@ -62,15 +79,11 @@ app.include_router(notes_router,              tags=["Daily Notes"])
 app.include_router(badges_router,             tags=["Badges"])
 app.include_router(sessions_router,           tags=["Session Tracking"])
 app.include_router(exercise_tracking_router,  tags=["Exercise Tracking"])
-
-# Exercise-history CRUD
 app.include_router(history_router,            tags=["Exercise History"])
 
+# --- Startup event: migrations, Redis, env var checks ---
 @app.on_event("startup")
 async def startup_event():
-    """
-    On startup, either auto‐create the DB in dev mode or run Alembic migrations in prod.
-    """
     logger.info("Starting AscendifyAI API")
 
     # 1) Check required env vars
@@ -81,40 +94,37 @@ async def startup_event():
     }
     logger.info(f"Env configuration: {env_ok}")
 
-    if not os.getenv("DATABASE_URL"):
+    # 2) Run Alembic migrations if DATABASE_URL is set
+    if os.getenv("DATABASE_URL"):
+        try:
+            logger.info("Applying Alembic migrations (upgrade head)")
+            from alembic.config import Config
+            from alembic import command
+
+            project_root     = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+            alembic_ini_path = os.path.join(project_root, "alembic.ini")
+            alembic_cfg      = Config(alembic_ini_path)
+            # alembic_cfg.set_main_option("sqlalchemy.url", os.getenv("DATABASE_URL"))
+
+            command.upgrade(alembic_cfg, "head")
+            logger.info("✅ Migrations applied successfully")
+        except Exception as e:
+            logger.error(f"❌ Failed to run migrations: {e}")
+    else:
         logger.error("DATABASE_URL is not set → skipping migrations")
-        return
 
-    # 2) Run Alembic migrations
-    try:
-        logger.info("Applying Alembic migrations (upgrade head)")
-        from alembic.config import Config
-        from alembic import command
-
-        project_root     = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-        alembic_ini_path = os.path.join(project_root, "alembic.ini")
-        alembic_cfg      = Config(alembic_ini_path)
-
-        # override URL if needed:
-        # alembic_cfg.set_main_option("sqlalchemy.url", os.getenv("DATABASE_URL"))
-
-        command.upgrade(alembic_cfg, "head")
-        logger.info("✅ Migrations applied successfully")
-    except Exception as e:
-        logger.error(f"❌ Failed to run migrations: {e}")
-        # Verify Redis is reachable
-
+    # 3) Check Redis connectivity
     try:
         await redis_client.ping()
         logger.info("✅ Redis connection OK")
     except Exception as e:
         logger.error(f"❌ Redis connection failed: {e}")
 
-    # 3) Warn if OpenAI key missing
+    # 4) Warn if OpenAI key is missing
     if not os.getenv("OPENAI_API_KEY"):
         logger.warning("OPENAI_API_KEY not set → plan generation will fail")
 
-
+# --- Root & health endpoints ---
 @app.get("/", tags=["Root"])
 async def root():
     return {
@@ -124,18 +134,17 @@ async def root():
         "docs":    "/docs"
     }
 
-
 @app.get("/health", tags=["Health"])
 async def health_check():
     return {"status": "healthy"}
 
-
+# --- Uvicorn entry point ---
 if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
         "app.main:app",
-        host     = os.getenv("HOST", "127.0.0.1"),
-        port     = int(os.getenv("PORT", 8001)),
-        reload   = True
+        host   = os.getenv("HOST", "127.0.0.1"),
+        port   = int(os.getenv("PORT", 8001)),
+        reload = True
     )

@@ -780,7 +780,7 @@ Return only JSON with a top‐level structure containing route_overview, trainin
         try:
             # Generate the plan using GPT-4
             response = openai.ChatCompletion.create(
-                model="gpt-4",  # Use appropriate model
+                model="gpt-4.1",  # Use appropriate model
                 messages=[
                     {"role": "system", "content": "You are an expert climbing coach. Return only valid JSON."},
                     {"role": "user", "content": prompt}
