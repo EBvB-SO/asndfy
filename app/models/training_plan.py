@@ -1,6 +1,6 @@
 # models/training_plan.py
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 
 class PlanSessionBase(BaseModel):
     day: str
@@ -34,7 +34,7 @@ class PhasePlanRequest(BaseModel):
     # The backend logic stays the same since it still receives the values
     weeks_to_train: str
     sessions_per_week: str
-    time_per_session: str  # Added to match the UI field we're now explicitly including
+    time_per_session: str
 
     current_climbing_grade: str
     max_boulder_grade: str
@@ -63,7 +63,9 @@ class PhasePlanRequest(BaseModel):
     
 class FullPlanRequest(BaseModel):
     plan_data: PhasePlanRequest
-    previous_analysis: str = None
+    weeks_to_train: int
+    sessions_per_week: int
+    previous_analysis: Optional[str] = None
 
 class TrainingPlanCreate(TrainingPlanBase):
     pass

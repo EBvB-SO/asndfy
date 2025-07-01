@@ -5,24 +5,21 @@ DESCRIPTION_KEYWORDS = {
     "is_endurance": {
         "keywords": [
             "sustained", "stamina", "endurance", "pump",
-            "all-day", "continuous", "long sequences"
-        ],
+            "all-day", "continuous", "long sequences"],
         "challenge": "endurance"
     },
 
     "is_power": {
         "keywords": [
             "powerful", "dynamic", "dyno", "explosive",
-            "bouldery", "hard move", "max effort"
-        ],
+            "bouldery", "hard move", "max effort"],
         "challenge": "power"
     },
     
     "is_technical": {
         "keywords": [
             "technical", "precise", "balance", "delicate",
-            "crux", "sequenced moves", "footwork"
-        ],
+            "crux", "sequenced moves", "footwork", "slab"],
         "challenge": "technical movement"
     },
 
@@ -38,12 +35,11 @@ DESCRIPTION_KEYWORDS = {
 
     "is_pockety": {
         "keywords": [
-            "pocket", "deep pocket", "mono pocket",
-            "duo pocket", "hole"
-        ],
+            "pocket", "deep pocket", "mono pocket", "frankenjura",
+            "duo pocket", "hole"],
         "challenge": "pockets"
     },
-    
+
     "is_steep": {
         "keywords": ["overhang", "roof", "roofy", "steep"],
         "challenge": "steepness"

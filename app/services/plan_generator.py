@@ -36,9 +36,18 @@ class PlanGeneratorService:
     
     def analyze_route(self, route_name: str, grade: str, crag: str, user_data: PhasePlanRequest = None) -> dict:
         """
-        Extract climbing characteristics from grade and crag information.
-        Now also incorporates user-provided route characteristics if available.
-        Returns a dictionary of route features.
+        Extract climbing characteristics from grade, route information and crag information.
+        Now also incorporates user-provided inputs and free-form description if available.
+        Features are derived from:
+            - route_angles → is_steep / is_technical
+            - route_lengths → is_endurance / is_power
+            - hold_types → is_crimpy / is_slopey / is_pockety
+            - route_description → keyword‐map lookup (DESCRIPTION_KEYWORDS)
+        Returns a dict of:
+            - boolean flags (is_steep, is_power, …)  
+            - primary_style  
+            - key_challenges (list of strings)  
+            - grade (raw string)
         """
         features = {
             "is_steep": False,
@@ -52,14 +61,8 @@ class PlanGeneratorService:
             "key_challenges": []
         }
         
-        # Analyze French grade for difficulty insights
-        grade_level = self.parse_french_grade(grade)
-        features["difficulty_level"] = grade_level
-        
-        # Higher grades are more likely to be power-intensive
-        if grade_level >= 4:  # Representing approximately 7a and above
-            if not features["is_endurance"]:
-                features["is_power"] = True
+        # 3) Preserve the raw grade string for downstream use
+        features["grade"] = grade
         
         # Now incorporate user-provided route characteristics if available
         if user_data:
@@ -135,47 +138,6 @@ class PlanGeneratorService:
         
         return features
     
-    def parse_french_grade(self, grade: str) -> int:
-        """
-        Convert French sport grade to a numerical difficulty scale (1-10).
-        """
-        grade = grade.lower().strip()
-        
-        # French sport grades mapping
-        french_mapping = {
-            "3": 1, "4": 1, "5": 1,
-            "5+": 1, "6a": 2, "6a+": 2,
-            "6b": 2, "6b+": 3, "6c": 3,
-            "6c+": 3, "7a": 4, "7a+": 4,
-            "7b": 5, "7b+": 5, "7c": 6,
-            "7c+": 6, "8a": 7, "8a+": 7,
-            "8b": 8, "8b+": 8, "8c": 9,
-            "8c+": 9, "9a": 10, "9a+": 10,
-            "9b": 10, "9b+": 10, "9c": 10
-        }
-        
-        # Direct match with French grades
-        for french_grade, level in french_mapping.items():
-            if grade == french_grade or grade.startswith(french_grade + " "):
-                return level
-        
-        # If no match found, extract first digit for a rough estimate
-        first_digit = re.search(r'(\d+)', grade)
-        if first_digit:
-            digit = int(first_digit.group(1))
-            if digit <= 5:
-                return 1
-            elif digit == 6:
-                return 2
-            elif digit == 7:
-                return 4
-            elif digit == 8:
-                return 7
-            else:
-                return 9
-        
-        # Default to middle difficulty
-        return 5
     
     def generate_preview(self, data: PhasePlanRequest) -> dict:
         """Generate a lightweight preview with route analysis and training approach."""
