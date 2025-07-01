@@ -89,13 +89,17 @@ async def refresh_token(request: RefreshTokenRequest):
 
 @router.post("/forgot-password", response_model=BaseResponse)
 async def forgot_password(request: ForgotPasswordRequest):
-    code = "".join(random.choices(string.digits, k=6))
-    await redis_client.set(f"pwdreset:{request.email}", code, ex=RESET_CODE_TTL)
-    send_password_reset_email(request.email, code)
-    return BaseResponse(
-        success=True,
-        message="If an account exists, you’ll receive a reset code shortly."
-    )
+    try:
+        code = "".join(random.choices(string.digits, k=6))
+        await redis_client.set(f"pwdreset:{request.email}", code, ex=RESET_CODE_TTL)
+        send_password_reset_email(request.email, code)
+        return BaseResponse(
+            success=True,
+            message="If an account exists, you'll receive a reset code shortly."
+        )
+    except Exception as e:
+        logger.error(f"Forgot password error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/verify-reset-code", response_model=BaseResponse)

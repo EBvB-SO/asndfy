@@ -14,6 +14,7 @@ import app.db.db_access as db
 
 from app.models.training_plan import PhasePlanRequest, FullPlanRequest
 from services.exercise_filter import ExerciseFilterService
+from services.description_keywords import DESCRIPTION_KEYWORDS
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ class PlanGeneratorService:
     
     def analyze_route(self, route_name: str, grade: str, crag: str, user_data: PhasePlanRequest = None) -> dict:
         """
-        Extract climbing characteristics from route name, grade and crag information.
+        Extract climbing characteristics from grade and crag information.
         Now also incorporates user-provided route characteristics if available.
         Returns a dictionary of route features.
         """
@@ -50,42 +51,6 @@ class PlanGeneratorService:
             "primary_style": "mixed",
             "key_challenges": []
         }
-        
-        # Start with analysis of the route name as before
-        route_lower = route_name.lower()
-        
-        # Check for steepness indicators
-        if any(keyword in route_lower for keyword in ["roof", "overhang", "steep", "cave", "arch"]):
-            features["is_steep"] = True
-            features["key_challenges"].append("steepness")
-        
-        # Check for technical indicators
-        if any(keyword in route_lower for keyword in ["technical", "slab", "balance", "delicate", "precise"]):
-            features["is_technical"] = True
-            features["key_challenges"].append("technical movement")
-        
-        # Check for endurance indicators
-        if any(keyword in route_lower for keyword in ["enduro", "endurance", "stamina", "pump", "long"]):
-            features["is_endurance"] = True
-            features["key_challenges"].append("endurance")
-        
-        # Check for power indicators
-        if any(keyword in route_lower for keyword in ["power", "dynamic", "dyno", "crux", "boulder", "short"]):
-            features["is_power"] = True
-            features["key_challenges"].append("power")
-        
-        # Check for hold type indicators
-        if any(keyword in route_lower for keyword in ["crimp", "edge", "small", "tiny"]):
-            features["is_crimpy"] = True
-            features["key_challenges"].append("small holds")
-        
-        if any(keyword in route_lower for keyword in ["sloper", "slippery", "friction", "slopey"]):
-            features["is_slopey"] = True
-            features["key_challenges"].append("slopers")
-            
-        if any(keyword in route_lower for keyword in ["pocket", "pockets", "pockety", "hole"]):
-            features["is_pockety"] = True
-            features["key_challenges"].append("pockets")
         
         # Analyze French grade for difficulty insights
         grade_level = self.parse_french_grade(grade)
@@ -141,25 +106,15 @@ class PlanGeneratorService:
                     if "pinches" not in features["key_challenges"]:
                         features["key_challenges"].append("pinches")
             
-            # Route description (free-form)
-            if user_data.route_description:
-                desc_lower = user_data.route_description.lower()
-                
-                # Look for additional indicators in the description
-                if any(keyword in desc_lower for keyword in ["sustained", "stamina", "endurance", "pump"]):
-                    features["is_endurance"] = True
-                    if "endurance" not in features["key_challenges"]:
-                        features["key_challenges"].append("endurance")
-                        
-                if any(keyword in desc_lower for keyword in ["powerful", "dynamic", "dyno", "explosive", "bouldery"]):
-                    features["is_power"] = True
-                    if "power" not in features["key_challenges"]:
-                        features["key_challenges"].append("power")
-                        
-                if any(keyword in desc_lower for keyword in ["technical", "precise", "balance", "delicate"]):
-                    features["is_technical"] = True
-                    if "technical movement" not in features["key_challenges"]:
-                        features["key_challenges"].append("technical movement")
+            # Route description (free-form) - feature flahs via keyword map
+            if user_data and user_data.route_description:
+                desc = user_data.route_description.lower()
+                for flag, cfg in DESCRIPTION_KEYWORDS.items():
+                    # if any keyword appears in the description, set the flag & record the challenge
+                    if any(kw in desc for kw in cfg["keywords"]):
+                        features[flag] = True
+                        if cfg["challenge"] not in features["key_challenges"]:
+                            features["key_challenges"].append(cfg["challenge"])
         
         # Set primary style based on detected features
         if features["is_steep"] and features["is_power"]:
