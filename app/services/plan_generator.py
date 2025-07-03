@@ -4,7 +4,7 @@ import re
 import logging
 import openai
 import os
-from typing import Dict, List, Any, Optional, Set, Tuple
+from typing import Dict, List, Any, Optional, Set, Tuple, Callable
 import sys
 
 # Add parent directory to path to import from root
@@ -186,7 +186,7 @@ class PlanGeneratorService:
         
         try:
             response = openai.ChatCompletion.create(
-                model="gpt-4",
+                model="gpt-3.5-turbo",
                 messages=[
                     {
                         "role": "system", 
@@ -194,8 +194,8 @@ class PlanGeneratorService:
                     },
                     {"role": "user", "content": preview_prompt}
                 ],
-                temperature=0.3,
-                max_tokens=6000
+                temperature=0.2,
+                max_tokens=1500
             )
             
             # Process the response
@@ -763,8 +763,15 @@ Each exercise includes a 'time_required' field that indicates how many minutes i
 Return only JSON with a top‐level structure containing route_overview, training_overview, and phases array. No extra text, no markdown:
 """
     
-    def generate_full_plan(self, request: FullPlanRequest) -> dict:
-        """Generate a complete training plan with phases."""
+    def generate_full_plan(
+        self,
+        request: FullPlanRequest,
+        on_progress: Optional[Callable[[int, int], None]] = None
+    ) -> dict:
+        """
+        If on_progress is provided, we'll call it with (phase_index, total_phases)
+        after each phase completes.
+        """
         # Extract data from request
         plan_data = request.plan_data
         previous_analysis = request.previous_analysis
@@ -799,8 +806,15 @@ Return only JSON with a top‐level structure containing route_overview, trainin
                 raw_json = raw_json.rstrip("```")
             raw_json = raw_json.strip()
             
-            # Parse the JSON
+            # Parse the JSO
             parsed = json.loads(raw_json)
+
+            # ─── Fire progress updates ─────────────────────────────
+            total = len(parsed.get("phases", []))
+            for idx, phase in enumerate(parsed["phases"], start=1):
+                if on_progress:
+                    on_progress(idx, total)
+            # ───────────────────────────────────────────────────────
             
             # Post-process the parsed JSON to separate exercises
             if "phases" in parsed:
@@ -835,17 +849,17 @@ Return only JSON with a top‐level structure containing route_overview, trainin
                 parsed["training_overview"] = "A structured training approach to prepare for your climbing goal."
             
             # Validate the plan structure
-            is_valid, error_msg = self.validate_training_plan(parsed)
+            is_valid, err = self.validate_training_plan(parsed)
             if not is_valid:
-                raise ValueError(f"Generated plan failed validation: {error_msg}")
-            
-            # Return only what the frontend’s PhaseBasedPlan needs
+                raise ValueError(f"Validation failed: {err}")
+
+            # finally return
             return { "phases": parsed["phases"] }
-            
+
         except json.JSONDecodeError as e:
-            logger.error(f"Error parsing JSON: {str(e)}")
-            raise ValueError(f"Generated invalid JSON: {str(e)}")
-            
+            logger.error(f"Error parsing JSON: {e}")
+            raise ValueError(f"Invalid JSON: {e}")
+
         except Exception as e:
-            logger.error(f"Error generating plan: {str(e)}")
+            logger.error(f"Error generating plan: {e}")
             raise

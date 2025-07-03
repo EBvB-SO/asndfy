@@ -1,8 +1,10 @@
 # app/api/training_plans.py
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from typing import List
 import logging
+import uuid
+import json
 
 from app.models.training_plan import (
     PhasePlanRequest,
@@ -13,6 +15,10 @@ from app.models.training_plan import (
 import app.db.db_access as db
 from app.services.plan_generator import PlanGeneratorService
 from app.core.dependencies import get_current_user_email
+from app.core.redis import redis_client
+from app.api._background import generate_plan_background
+
+
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/training_plans", tags=["Training Plans"])
@@ -54,6 +60,44 @@ def generate_full_plan(
             detail=f"Error generating plan: {str(e)}"
         )
 
+@router.post("/generate_full_async")
+async def generate_full_plan_async(
+    request: FullPlanRequest,
+    background_tasks: BackgroundTasks,
+    current_user: str = Depends(get_current_user_email)
+):
+    """Start plan generation and return immediately with a task ID"""
+    task_id = str(uuid.uuid4())
+    
+    # Initialize status in Redis
+    await redis_client.set(
+        f"plan_generation:{task_id}",
+        json.dumps({"status": "processing", "progress": 0}),
+        ex=600  # expire in 10 minutes
+    )
+
+    # Queue the actual generation in the background
+    background_tasks.add_task(
+        generate_plan_background,
+        task_id,
+        request,
+        current_user
+    )
+
+    return {"task_id": task_id}
+
+
+@router.get("/plan_status/{task_id}")
+async def get_plan_status(
+    task_id: str,
+    current_user: str = Depends(get_current_user_email)
+):
+    """Check the status of a plan generation task"""
+    status_data = await redis_client.get(f"plan_generation:{task_id}")
+    if not status_data:
+        raise HTTPException(404, "Task not found")
+
+    return json.loads(status_data)
 
 @router.get("/{email}", response_model=List[TrainingPlan])
 def get_training_plans(
