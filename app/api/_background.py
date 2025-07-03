@@ -19,46 +19,51 @@ def generate_plan_background(
 ) -> None:
     """
     Background task to generate a complete training plan.
-
-    This will stream progress to Redis under the key "plan_generation:{task_id}"
-    so that clients can poll /plan_status/{task_id}.
     """
+    import asyncio
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
     service = PlanGeneratorService()
-
-    def on_progress(current: int, total: int):
+    
+    def update_progress(current: int, total: int):
         pct = int(current / total * 100)
         logger.info(f"[{task_id}] progress: {pct}% ({current}/{total})")
-        # Because redis_client is async, we need to schedule it in the event loop:
-        asyncio.get_event_loop().create_task(
+        
+        # Use run_coroutine_threadsafe for thread-safe async operations
+        loop.run_until_complete(
             redis_client.set(
                 f"plan_generation:{task_id}",
                 json.dumps({"status": "processing", "progress": pct}),
                 ex=600
             )
         )
-
+    
     try:
         logger.info(f"[{task_id}] starting background plan generation for {user_email}")
-        # This will invoke on_progress() after each phase
-        plan = service.generate_full_plan(request, on_progress=on_progress)
-
+        
+        # Generate the plan
+        plan = service.generate_full_plan(request.plan_data, on_progress=update_progress)
+        
         logger.info(f"[{task_id}] generation complete, saving final result")
-        # store the final payload in Redis (or you could persist to DB here)
-        asyncio.get_event_loop().run_until_complete(
+        
+        # Store the final result
+        loop.run_until_complete(
             redis_client.set(
                 f"plan_generation:{task_id}",
                 json.dumps({"status": "complete", "progress": 100, "plan": plan}),
                 ex=600
             )
         )
-
+        
     except Exception as e:
         logger.error(f"[{task_id}] failed to generate plan: {e}", exc_info=True)
-        # mark as error
-        asyncio.get_event_loop().run_until_complete(
+        loop.run_until_complete(
             redis_client.set(
                 f"plan_generation:{task_id}",
                 json.dumps({"status": "error", "message": str(e)}),
                 ex=600
             )
         )
+    finally:
+        loop.close()

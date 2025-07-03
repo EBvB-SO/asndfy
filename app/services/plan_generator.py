@@ -793,7 +793,8 @@ Return only JSON with a top‐level structure containing route_overview, trainin
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.2,
-                max_tokens=10000
+                max_tokens=10000,
+                request_timeout=120
             )
             
             # Extract and process the response
