@@ -225,26 +225,46 @@ class PlanGeneratorService:
         all_exercises = db.get_exercises()
         return [ex["name"] for ex in all_exercises]
     
-    def validate_exercise_names(self, plan_data: dict, valid_exercise_names: List[str]) -> Tuple[bool, List[str]]:
-        """
-        Check if all exercises in the plan's focus fields are valid exercise names.
-        Returns (is_valid, invalid_exercises)
-        """
-        invalid_exercises = []
+    def validate_and_fix_exercise_names(self, plan_data: dict, valid_names: List[str]) -> dict:
+        """Validate exercise names and attempt to fix invalid ones."""
+        from difflib import get_close_matches
         
-        # Check each phase, each day in the weekly schedule
-        for phase in plan_data.get("phases", []):
-            for day in phase.get("weekly_schedule", []):
+        fixed_plan = plan_data.copy()
+        errors = []
+        fixes = []
+        
+        for phase_idx, phase in enumerate(fixed_plan.get("phases", [])):
+            for day_idx, day in enumerate(phase.get("weekly_schedule", [])):
                 focus = day.get("focus", "")
                 
-                # Split focus by '+' in case multiple exercises are listed
+                # Split by '+' for combined exercises
                 focus_parts = [part.strip() for part in focus.split("+")]
+                fixed_parts = []
                 
                 for part in focus_parts:
-                    if part and part not in valid_exercise_names:
-                        invalid_exercises.append(part)
+                    if part in valid_names:
+                        fixed_parts.append(part)
+                    else:
+                        # Try fuzzy matching
+                        matches = get_close_matches(part, valid_names, n=1, cutoff=0.8)
+                        if matches:
+                            fixed_parts.append(matches[0])
+                            fixes.append(f"Fixed '{part}' -> '{matches[0]}'")
+                            logger.warning(f"Auto-fixed exercise name: '{part}' -> '{matches[0]}'")
+                        else:
+                            errors.append(f"Invalid exercise: '{part}' in phase {phase_idx+1}, day {day_idx+1}")
+                
+                # Update the focus with fixed names
+                if fixed_parts:
+                    fixed_plan["phases"][phase_idx]["weekly_schedule"][day_idx]["focus"] = " + ".join(fixed_parts)
         
-        return len(invalid_exercises) == 0, invalid_exercises
+        if errors:
+            raise ValueError(f"Invalid exercises found: {'; '.join(errors)}")
+        
+        if fixes:
+            logger.info(f"Applied fixes: {'; '.join(fixes)}")
+        
+        return fixed_plan
     
     def extract_exercise_details(self, exercise_name: str, full_details: str) -> str:
         """
@@ -780,87 +800,96 @@ Return only JSON with a top‐level structure containing route_overview, trainin
 
         # Get valid exercise names for validation
         valid_exercise_names = self.get_valid_exercise_names()
+        max_retries = 3
         
-        # Create the prompt
-        prompt = self.create_phase_based_prompt(plan_data, weeks, sessions, previous_analysis)
+        for attempt in range(max_retries):
+            # Create the prompt
+            prompt = self.create_phase_based_prompt(plan_data, weeks, sessions, previous_analysis)
 
-        try:
-            # Generate the plan using GPT-4
-            response = openai.ChatCompletion.create(
-                model="gpt-4.1",  # Use appropriate model
-                messages=[
-                    {"role": "system", "content": "You are an expert climbing coach. Return only valid JSON."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.2,
-                max_tokens=10000,
-                request_timeout=120
-            )
+            if attempt > 0:
+                prompt += f"\n\nIMPORTANT: Previous attempt failed due to invalid exercise names. You MUST use ONLY these exact exercise names:\n{chr(10).join(valid_exercise_names)}"
+        
+            try:
+                # Generate the plan using GPT-4
+                response = openai.ChatCompletion.create(
+                    model="gpt-4.1",
+                    messages=[
+                        {"role": "system", "content": "You are an expert climbing coach. Return only valid JSON."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.2 if attempt == 0 else 0.1,
+                    max_tokens=10000,
+                    request_timeout=120
+                )
+                
+                raw_json = response.choices[0].message.content.strip()
+                if raw_json.startswith("```"):
+                    raw_json = raw_json.strip("```json\n").rstrip("```")
             
-            # Extract and process the response
-            raw_json = response.choices[0].message.content.strip()
+                parsed = json.loads(raw_json)
             
-            # Clean up any markdown formatting
-            if raw_json.startswith("```"):
-                raw_json = raw_json.strip("```json\n")
-            if raw_json.endswith("```"):
-                raw_json = raw_json.rstrip("```")
-            raw_json = raw_json.strip()
+                fixed_plan = self.validate_and_fix_exercise_names(parsed, valid_exercise_names)
             
-            # Parse the JSO
-            parsed = json.loads(raw_json)
-
-            # ─── Fire progress updates ─────────────────────────────
-            total = len(parsed.get("phases", []))
-            for idx, phase in enumerate(parsed["phases"], start=1):
-                if on_progress:
-                    on_progress(idx, total)
-            # ───────────────────────────────────────────────────────
-            
-            # Post-process the parsed JSON to separate exercises
-            if "phases" in parsed:
-                for phase in parsed["phases"]:
-                    if "weekly_schedule" in phase:
-                        for day in phase["weekly_schedule"]:
-                            if "+" in day["focus"]:
-                                # Split the focus string into main exercises
-                                focus_parts = [part.strip() for part in day["focus"].split("+")]
-                                
-                                # The original focus and details remain for backward compatibility
-                                # Store the separate exercises in a new field
-                                day["exercises"] = []
-                                
-                                # Store the original details for reference
-                                original_details = day["details"]
-                                
-                                # Create entries for each exercise
-                                for focus_part in focus_parts:
-                                    # Extract specific details if possible
-                                    exercise_detail = self.extract_exercise_details(focus_part, original_details)
+                # Progress updates
+                total = len(fixed_plan.get("phases", []))
+                for idx in range(total):
+                    if on_progress:
+                        on_progress(idx + 1, total)
+                
+                # Post-process the parsed JSON to separate exercises
+                if "phases" in parsed:
+                    for phase in parsed["phases"]:
+                        if "weekly_schedule" in phase:
+                            for day in phase["weekly_schedule"]:
+                                if "+" in day["focus"]:
+                                    # Split the focus string into main exercises
+                                    focus_parts = [part.strip() for part in day["focus"].split("+")]
                                     
-                                    # Add this exercise to the list
-                                    day["exercises"].append({
-                                        "name": focus_part,
-                                        "details": exercise_detail or original_details
-                                    })
-            
-            # Add missing fields if not present
-            if "phases" in parsed and "route_overview" not in parsed:
-                parsed["route_overview"] = previous_analysis or "Training plan for this route"
-                parsed["training_overview"] = "A structured training approach to prepare for your climbing goal."
-            
-            # Validate the plan structure
-            is_valid, err = self.validate_training_plan(parsed)
-            if not is_valid:
-                raise ValueError(f"Validation failed: {err}")
+                                    # The original focus and details remain for backward compatibility
+                                    # Store the separate exercises in a new field
+                                    day["exercises"] = []
+                                    
+                                    # Store the original details for reference
+                                    original_details = day["details"]
+                                    
+                                    # Create entries for each exercise
+                                    for focus_part in focus_parts:
+                                        # Extract specific details if possible
+                                        exercise_detail = self.extract_exercise_details(focus_part, original_details)
+                                        
+                                        # Add this exercise to the list
+                                        day["exercises"].append({
+                                            "name": focus_part,
+                                            "details": exercise_detail or original_details
+                                        })
+                
+                # Add missing fields if not present
+                if "phases" in parsed and "route_overview" not in parsed:
+                    parsed["route_overview"] = previous_analysis or "Training plan for this route"
+                    parsed["training_overview"] = "A structured training approach to prepare for your climbing goal."
+                
+                # Validate the plan structure
+                is_valid, err = self.validate_training_plan(parsed)
+                if not is_valid:
+                    raise ValueError(f"Validation failed: {err}")
 
-            # finally return
-            return { "phases": parsed["phases"] }
+                # finally return
+                return { "phases": parsed["phases"] }
 
-        except json.JSONDecodeError as e:
-            logger.error(f"Error parsing JSON: {e}")
-            raise ValueError(f"Invalid JSON: {e}")
+            except ValueError as e:
+                logger.warning(f"Attempt {attempt + 1} failed: {e}")
+                if attempt == max_retries - 1:
+                    raise ValueError(f"Failed after {max_retries} attempts: {e}")
+                continue
+                
+            except json.JSONDecodeError as e:
+                logger.error(f"Attempt {attempt + 1} - Error parsing JSON: {e}")
+                if attempt == max_retries - 1:
+                    raise ValueError(f"Invalid JSON after {max_retries} attempts: {e}")
+                continue
 
-        except Exception as e:
-            logger.error(f"Error generating plan: {e}")
-            raise
+            except Exception as e:
+                logger.error(f"Error on attempt {attempt + 1}: {e}")
+                if attempt == max_retries - 1:
+                    raise
+                continue
