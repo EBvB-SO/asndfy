@@ -1,11 +1,20 @@
 # services/exercise_filter.py
 import re
 import logging
+from collections import defaultdict
 from typing import List, Dict, Any, Set
 from app.models.training_plan import PhasePlanRequest
 import app.db.db_access as db
 
 logger = logging.getLogger(__name__)
+
+# PHASE WEIGHTS: boost or dampen certain energy systems per phase
+phase_weights = {
+    "base":  {"strength": +3, "anaerobic_capacity": +2, "aerobic_capacity": +1, "power": 0},
+    "peak":  {"anaerobic_power": +2, "aerobic_power": +2, "power": +1, "strength": 0, "anaerobic_capacity": -1, "aerobic_capacity": -1},
+    "taper": {"strength": -1, "power": -1, "aerobic_capacity":  0},
+}
+
 
 class ExerciseFilterService:
     """Service for filtering and ranking exercises based on route and climber profile"""
@@ -72,7 +81,7 @@ class ExerciseFilterService:
         
         return facilities
     
-    def filter_exercises_enhanced(self, exercises: List[Dict[str, Any]], data: PhasePlanRequest, route_features: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def filter_exercises_enhanced(self, exercises: List[Dict[str, Any]], data: PhasePlanRequest, route_features: Dict[str, Any], phase_type: str, phase_weeks: int) -> List[Dict[str, Any]]:
         """
         Enhanced filter with exercise ranking based on route and climber profile.
         Returns exercises filtered and sorted by relevance.
@@ -98,29 +107,46 @@ class ExerciseFilterService:
                 session_time_minutes = int(time_value * 60)
         
         logger.debug(f"Session time: {session_time_minutes} minutes")
-        
+
         # Parse user ability levels
         boulder_grade = data.max_boulder_grade.upper().strip()
         climbing_grade = data.current_climbing_grade.lower().strip()
-        
-        # Determine experience level
-        experience_level = "intermediate"  # Default
-        
-        # Look for explicit mentions in training_experience
-        experience_text = data.training_experience.lower()
-        if any(term in experience_text for term in ["beginner", "novice", "new", "starting", "less than a year"]):
-            experience_level = "beginner"
-        elif any(term in experience_text for term in ["advanced", "expert", "experienced", "many years", "over 5 years"]):
-            experience_level = "advanced"
-        
-        # Parse for numerical indicators
-        years_match = re.search(r'(\d+)\s*(?:year|yr)', experience_text)
-        if years_match:
-            years = int(years_match.group(1))
-            if years < 1:
+
+        # Simple parse: “V5+” → 5, “V4” → 4, else None
+        m = re.match(r"V(\d+)", boulder_grade)
+        boulder_grade_value = int(m.group(1)) if m else None
+
+        # ————————————————
+        # AGE RESTRICTION
+        # ————————————————
+        user_age = data.age  # Optional[int]
+
+        # ————————————————
+        # EXPERIENCE LEVEL (years_exp only)
+        # ————————————————
+
+        if data.years_experience is not None:
+            years_exp = data.years_experience
+        else:
+            m = re.search(r'(\d+)\s*(?:year|yr)', data.training_experience.lower())
+            years_exp = float(m.group(1)) if m else None
+
+        if years_exp is not None:
+            if years_exp < 1:
                 experience_level = "beginner"
-            elif years >= 5:
+            elif years_exp >= 5:
                 experience_level = "advanced"
+            else:
+                experience_level = "intermediate"
+        else:
+            # fallback keyword parse only if years_exp is missing
+            txt = data.training_experience.lower()
+            if any(t in txt for t in ["beginner","novice","starting","<1 year"]):
+                experience_level = "beginner"
+            elif any(t in txt for t in ["advanced","expert","many years"]):
+                experience_level = "advanced"
+            else:
+                experience_level = "intermediate"
         
         # Parse attribute ratings for weaknesses and strengths
         attribute_ratings = self.parse_attribute_ratings(data.attribute_ratings)
@@ -195,17 +221,19 @@ class ExerciseFilterService:
             ex["score"] = 0
             ex["compatible_with"] = exercise_compatibility.get(ex_name, [])
             
-            # SAFETY FILTERS - Skip unsafe exercises
-            if ex_name in campus_exercises:
-                # Only allow campus exercises for advanced climbers or 7a+ climbers
-                if experience_level == "beginner" or "7" not in climbing_grade:
-                    continue
-            
-            # Make fingerboard exercises safer for beginners
-            if experience_level == "beginner" and ex_name in fingerboard_exercises:
-                ex["description"] = "BEGINNER MODIFICATION: " + ex["description"]
-                if "Max Hangs" in ex_name:
-                    ex["description"] += " Use larger edges (20mm+) and reduced load."
+            # SAFETY FILTERS - Skip unsafe exercises            
+            # No campus board if UNDER 18
+            if ex_name in campus_exercises and user_age is not None and user_age < 18:
+                continue
+
+            # No campus board if too little experience or too low grade
+            if ex_name in campus_exercises and (experience_level == "beginner" or (boulder_grade_value or 0) < 5):
+                continue
+
+            # No fingerboard if too little experience or too low grade
+            if ex_name in fingerboard_exercises and (experience_level == "beginner" or (boulder_grade_value or 0) < 4):
+                continue
+
             
             # SCORING SYSTEM
             
@@ -276,32 +304,48 @@ class ExerciseFilterService:
                 score += 1
             
             # Record the final score and time requirement
-            ex["score"] = score
             ex["time_required"] = time_required
             
-            # Only include if it has a positive score (relevant)
+            # Phase‐based adjustment (must happen before we decide inclusion)
+            score += phase_weights.get(phase_type, {}).get(ex_type, 0)
+
+            # Record the final score and include only positive‐scoring exercises
+            ex["score"] = score
             if score > 0:
-                ranked_exercises.append(ex)
-        
+               ranked_exercises.append(ex)
+
         # Sort by score (descending)
         ranked_exercises.sort(key=lambda x: x["score"], reverse=True)
-        
-        # Ensure we have enough exercises (minimum 12)
-        if len(ranked_exercises) < 12:
-            # Add more exercises that weren't included
-            for ex in exercises:
-                ex_copy = ex.copy()
-                ex_copy["score"] = 0
-                time_required = int(ex.get("time_required", 30))
-                ex_copy["time_required"] = time_required
-                
-                # Check facility requirements and time requirements here too
-                required_facilities = set(ex.get("required_facilities", "bouldering_wall").split(","))
-                if (ex["name"] not in [e["name"] for e in ranked_exercises] 
-                    and required_facilities.issubset(available_facilities)
-                    and time_required <= session_time_minutes):
-                    ranked_exercises.append(ex_copy)
-                    if len(ranked_exercises) >= 15:
-                        break
+
+        # 1) Bucket by system
+        buckets = defaultdict(list)
+        for ex in ranked_exercises:
+            buckets[ex["type"]].append(ex)
+
+        # 2) Reserve one per critical system
+        critical_systems = [
+            "strength",
+            "anaerobic_capacity",
+            "aerobic_capacity",
+            "anaerobic_power",
+            "aerobic_power",
+        ]
+        final_list = []
+
+        for sys in critical_systems:
+            if buckets[sys]:
+                # take the top-scoring exercise of that type
+                final_list.append(buckets[sys][0])
+
+        # 3) Fill the remainder up to your target (e.g. 12–15)
+        TARGET_COUNT = 15
+        for ex in ranked_exercises:
+            if len(final_list) >= TARGET_COUNT:
+                break
+            if ex not in final_list:
+                final_list.append(ex)
+
+        # 4) Use this balanced list from here on
+        ranked_exercises = final_list
         
         return ranked_exercises

@@ -42,12 +42,13 @@ class PhasePlanRequest(BaseModel):
     perceived_strengths: str
     perceived_weaknesses: str
     attribute_ratings: str = ""
+    years_experience: Optional[float] = None
+    age: Optional[int] = None
     training_facilities: str
     injury_history: str
     general_fitness: str
     height: str
     weight: str
-    age: str
     preferred_climbing_style: str
     indoor_vs_outdoor: str
     onsight_flash_level: str
