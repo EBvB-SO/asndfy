@@ -13,9 +13,9 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import app.db.db_access as db
 
 from app.models.training_plan import PhasePlanRequest, FullPlanRequest
-from services.exercise_filter import ExerciseFilterService
-from services.phase_structure import PhaseStructureService
-from services.description_keywords import DESCRIPTION_KEYWORDS
+from app.services.exercise_filter import ExerciseFilterService
+from app.services.phase_structure import PhaseStructureService
+from app.services.description_keywords import DESCRIPTION_KEYWORDS
 
 logger = logging.getLogger(__name__)
 
@@ -784,277 +784,297 @@ Each exercise includes a 'time_required' field that indicates how many minutes i
 
 Return only JSON with a top‐level structure containing route_overview, training_overview, and phases array. No extra text, no markdown:
 """
-    
-    # In app/services/plan_generator.py
 
-def generate_full_plan(
-    self,
-    request: FullPlanRequest,
-    on_progress: Optional[Callable[[int, int], None]] = None
-) -> dict:
-    """Generate a full training plan using deterministic phases."""
-    
-    # Extract data from request
-    plan_data = request.plan_data
-    previous_analysis = request.previous_analysis
-    weeks = int(plan_data.weeks_to_train)
-    sessions = int(plan_data.sessions_per_week)
-
-    # Step 1: Analyze route
-    route_features = self.analyze_route(
-        plan_data.route, 
-        plan_data.grade, 
-        plan_data.crag, 
-        user_data=plan_data
-    )
-    
-    # Step 2: Get attribute ratings
-    attribute_ratings = self.exercise_filter.parse_attribute_ratings(
-        plan_data.attribute_ratings
-    )
-    
-    # Step 3: Determine phases algorithmically
-    phases = self.phase_structure.determine_phase_structure(
-        plan_data,
-        weeks,
-        sessions,
-        route_features,
-        attribute_ratings
-    )
-    
-    logger.info(f"Determined {len(phases)} phases for {weeks}-week plan")
-    
-    # Step 4: Generate the complete plan
-    complete_plan = {
-        "phases": []
-    }
-    
-    # Get all exercises once
-    all_exercises = db.get_exercises()
-    valid_exercise_names = self.get_valid_exercise_names()
-    
-    # For each phase, filter exercises and generate schedule
-    for idx, phase in enumerate(phases):
-        logger.info(f"Generating phase {idx+1}/{len(phases)}: {phase['name']}")
+    def generate_full_plan(
+        self,
+        request: FullPlanRequest,
+        on_progress: Optional[Callable[[int, int], None]] = None
+    ) -> dict:
+        """Generate a full training plan using deterministic phases."""
         
-        # Filter exercises for this specific phase
-        phase_exercises = self.exercise_filter.filter_exercises_enhanced(
-            all_exercises,
-            plan_data,
-            route_features,
-            phase_type=phase['type'],
-            phase_weeks=phase['weeks']
+        # Extract data from request
+        plan_data = request.plan_data
+        previous_analysis = request.previous_analysis
+        weeks = int(plan_data.weeks_to_train)
+        sessions = int(plan_data.sessions_per_week)
+
+        # Step 1: Analyze route
+        route_features = self.analyze_route(
+            plan_data.route, 
+            plan_data.grade, 
+            plan_data.crag, 
+            user_data=plan_data
         )
         
-        # Try up to 3 times for each phase
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                # Create phase-specific prompt
-                phase_prompt = self._create_phase_specific_prompt(
-                    plan_data,
-                    phase,
-                    phase_exercises,
-                    sessions,
-                    previous_analysis
-                )
-                
-                if attempt > 0:
-                    phase_prompt += f"\n\nIMPORTANT: Previous attempt failed. You MUST use ONLY these exact exercise names:\n{chr(10).join([ex['name'] for ex in phase_exercises[:20]])}"
-                
-                # Generate schedule for this phase
-                response = openai.ChatCompletion.create(
-                    model="gpt-4",
-                    messages=[
-                        {"role": "system", "content": "You are an expert climbing coach. Return only valid JSON."},
-                        {"role": "user", "content": phase_prompt}
-                    ],
-                    temperature=0.2 if attempt == 0 else 0.1,
-                    max_tokens=4000,
-                    request_timeout=60
-                )
-                
-                raw_json = response.choices[0].message.content.strip()
-                if raw_json.startswith("```"):
-                    raw_json = raw_json.strip("```json\n").rstrip("```")
-                
-                phase_schedule = json.loads(raw_json)
-                
-                # Validate and fix exercise names for this phase
-                fixed_schedule = self._validate_phase_exercises(
-                    phase_schedule, 
-                    [ex['name'] for ex in phase_exercises]
-                )
-                
-                # Post-process to separate exercises if needed
-                if "weekly_schedule" in fixed_schedule:
-                    for day in fixed_schedule["weekly_schedule"]:
-                        if "+" in day.get("focus", ""):
-                            focus_parts = [part.strip() for part in day["focus"].split("+")]
-                            day["exercises"] = []
-                            original_details = day["details"]
-                            
-                            for focus_part in focus_parts:
-                                exercise_detail = self.extract_exercise_details(focus_part, original_details)
-                                day["exercises"].append({
-                                    "name": focus_part,
-                                    "details": exercise_detail or original_details
-                                })
-                
-                # Add to complete plan
-                complete_plan["phases"].append({
-                    "phase_name": phase['name'],
-                    "description": phase['description'],
-                    "weekly_schedule": fixed_schedule.get("weekly_schedule", [])
-                })
-                
-                if on_progress:
-                    on_progress(idx + 1, len(phases))
-                
-                break  # Success, move to next phase
-                
-            except (json.JSONDecodeError, ValueError) as e:
-                logger.warning(f"Phase {idx+1} attempt {attempt+1} failed: {e}")
-                if attempt == max_retries - 1:
-                    raise ValueError(f"Failed to generate phase {idx+1} after {max_retries} attempts: {e}")
-                continue
-                
-            except Exception as e:
-                logger.error(f"Error generating phase {idx+1}: {e}")
-                raise
-    
-    return complete_plan
-
-def _create_phase_specific_prompt(
-    self, 
-    data: PhasePlanRequest,
-    phase: Dict[str, Any],
-    filtered_exercises: List[Dict[str, Any]],
-    sessions_per_week: int,
-    previous_analysis: Optional[str] = None
-) -> str:
-    """Create a prompt for generating a single phase's weekly schedule."""
-    
-    # Convert exercises to minimal JSON
-    minimal_exercises = []
-    for ex in filtered_exercises[:20]:  # Limit to top 20 to save tokens
-        minimal_ex = {
-            "name": ex["name"],
-            "type": ex["type"],
-            "time_required": ex.get("time_required", 30)
+        # Step 2: Get attribute ratings
+        attribute_ratings = self.exercise_filter.parse_attribute_ratings(
+            plan_data.attribute_ratings
+        )
+        
+        # Step 3: Determine phases algorithmically
+        phases = self.phase_structure.determine_phase_structure(
+            plan_data,
+            weeks,
+            sessions,
+            route_features,
+            attribute_ratings
+        )
+        
+        logger.info(f"Determined {len(phases)} phases for {weeks}-week plan")
+        
+        # Step 4: Generate the complete plan
+        complete_plan = {
+            "phases": []
         }
-        minimal_exercises.append(minimal_ex)
-    
-    exercises_json = json.dumps(minimal_exercises, indent=2)
-    
-    # Phase-specific guidance
-    phase_guidance = {
-        "base": """
-For this BASE phase, prioritize:
-- Strength development (fingerboard, max boulders)
-- Building work capacity (anaerobic capacity)
-- Addressing weaknesses identified in the climber profile
-- Maintaining aerobic base with at least one endurance session per week
-""",
-        "peak": """
-For this PEAK phase, prioritize:
-- Power-endurance work (anaerobic power, aerobic power)
-- Route-specific training
-- Maintaining strength with reduced volume
-- Quality over quantity - higher intensity, lower volume
-""",
-        "taper": """
-For this TAPER phase:
-- Reduce total volume by 40-50%
-- Maintain intensity on key exercises
-- Focus on feeling fresh and recovered
-- Include more technique and movement work
-- Avoid introducing new exercises or stimuli
-"""
-    }
-    
-    prompt = f"""
-You are generating the weekly schedule for a single phase of a climbing training plan.
-
-Phase: {phase['name']}
-Phase Type: {phase['type']} 
-Duration: {phase['weeks']} weeks
-Description: {phase['description']}
-
-Climber Profile:
-- Current grade: {data.current_climbing_grade}
-- Weaknesses: {data.perceived_weaknesses}
-- Available time: {data.time_per_session} per session
-- Sessions per week: {sessions_per_week}
-
-{phase_guidance.get(phase['type'], '')}
-
-Available exercises (already filtered for this phase):
-{exercises_json}
-
-CRITICAL RULES:
-1. You must ONLY use exercise names exactly as they appear above
-2. Create exactly {sessions_per_week} training days
-3. Each session should fit within the time constraint
-4. Follow proper exercise ordering: high intensity → lower intensity
-5. Include appropriate warm-up and cool-down
-
-Return a JSON object with ONLY a "weekly_schedule" array containing {sessions_per_week} days.
-Each day should have:
-- "day": Day of the week (e.g., "Monday", "Wednesday", "Friday", "Sunday")
-- "focus": The exercise name(s) joined with " + " if multiple
-- "details": Detailed workout instructions including:
-  - Warm-up protocol
-  - Main exercises with sets, reps, rest periods
-  - Cool-down
-  - Total time estimate
-
-Example format:
-{{
-    "weekly_schedule": [
-        {{
-            "day": "Monday",
-            "focus": "Fingerboard Max Hangs + Core Circuit",
-            "details": "Warm-up: 15 min easy climbing, progressing to harder grades. Fingerboard Max Hangs: 5 sets of 10-second hangs on 18mm edge at 85% effort, 3 min rest between. Core Circuit: 3 rounds of 10 hanging knee raises, 30s plank, 10 Russian twists. Cool-down: 5 min easy traverse."
-        }}
-    ]
-}}
-
-Generate the weekly schedule now:
-"""
-    
-    return prompt
-
-def _validate_phase_exercises(
-    self, 
-    phase_schedule: Dict[str, Any], 
-    valid_names: List[str]
-) -> Dict[str, Any]:
-    """Validate and fix exercise names in a phase schedule."""
-    from difflib import get_close_matches
-    
-    fixed_schedule = phase_schedule.copy()
-    
-    if "weekly_schedule" in fixed_schedule:
-        for day in fixed_schedule["weekly_schedule"]:
-            focus = day.get("focus", "")
-            focus_parts = [part.strip() for part in focus.split("+")]
-            fixed_parts = []
+        
+        # Get all exercises once
+        all_exercises = db.get_exercises()
+        valid_exercise_names = self.get_valid_exercise_names()
+        
+        # For each phase, filter exercises and generate schedule
+        for idx, phase in enumerate(phases):
+            logger.info(f"Generating phase {idx+1}/{len(phases)}: {phase['name']}")
             
-            for part in focus_parts:
-                if part in valid_names:
-                    fixed_parts.append(part)
-                else:
-                    # Try fuzzy matching
-                    matches = get_close_matches(part, valid_names, n=1, cutoff=0.8)
-                    if matches:
-                        fixed_parts.append(matches[0])
-                        logger.warning(f"Auto-fixed exercise: '{part}' -> '{matches[0]}'")
+            # Filter exercises for this specific phase
+            phase_exercises = self.exercise_filter.filter_exercises_enhanced(
+                all_exercises,
+                plan_data,
+                route_features,
+                phase_type=phase['type'],
+                phase_weeks=phase['weeks']
+            )
+            
+            # Try up to 3 times for each phase
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    # Create phase-specific prompt
+                    phase_prompt = self._create_phase_specific_prompt(
+                        plan_data,
+                        phase,
+                        phase_exercises,
+                        sessions,
+                        previous_analysis
+                    )
+                    
+                    if attempt > 0:
+                        phase_prompt += f"\n\nIMPORTANT: Previous attempt failed. You MUST use ONLY these exact exercise names:\n{chr(10).join([ex['name'] for ex in phase_exercises[:20]])}"
+                    
+                    # Generate schedule for this phase
+                    response = openai.ChatCompletion.create(
+                        model="gpt-4",
+                        messages=[
+                            {"role": "system", "content": "You are an expert climbing coach. Return only valid JSON."},
+                            {"role": "user", "content": phase_prompt}
+                        ],
+                        temperature=0.2 if attempt == 0 else 0.1,
+                        max_tokens=4000,
+                        request_timeout=60
+                    )
+                    
+                    raw_json = response.choices[0].message.content.strip()
+                    if raw_json.startswith("```"):
+                        raw_json = raw_json.strip("```json\n").rstrip("```")
+                    
+                    phase_schedule = json.loads(raw_json)
+                    
+                    # Validate and fix exercise names for this phase
+                    fixed_schedule = self._validate_phase_exercises(
+                        phase_schedule, 
+                        [ex['name'] for ex in phase_exercises]
+                    )
+                    
+                    # Post-process to separate exercises if needed
+                    if "weekly_schedule" in fixed_schedule:
+                        for day in fixed_schedule["weekly_schedule"]:
+                            if "+" in day.get("focus", ""):
+                                focus_parts = [part.strip() for part in day["focus"].split("+")]
+                                day["exercises"] = []
+                                original_details = day["details"]
+                                
+                                for focus_part in focus_parts:
+                                    exercise_detail = self.extract_exercise_details(focus_part, original_details)
+                                    day["exercises"].append({
+                                        "name": focus_part,
+                                        "details": exercise_detail or original_details
+                                    })
+                    # —— NEW: enforce high‐intensity exercises first in each session —— #
+                    DAY_INTENSITY_ORDER = {
+                        "Max Boulder Sessions": 0,
+                        "Campus Board Exercises": 0,
+                        "Fingerboard Max Hangs": 0,
+                        # you can add more mappings here…
+                    }
+
+                    def sort_focus(focus_str):
+                        parts = [p.strip() for p in focus_str.split("+")]
+                        parts.sort(key=lambda p: DAY_INTENSITY_ORDER.get(p, 99))
+                        return " + ".join(parts)
+
+                    for day in fixed_schedule["weekly_schedule"]:
+                        day["focus"] = sort_focus(day["focus"])
+                    # — end intensity sort — #
+                    
+                    # Add to complete plan
+                    complete_plan["phases"].append({
+                        "phase_name": phase['name'],
+                        "description": phase['description'],
+                        "weekly_schedule": fixed_schedule.get("weekly_schedule", [])
+                    })     
+            
+                    if on_progress:
+                        on_progress(idx + 1, len(phases))
+                    
+                    break  # Success, move to next phase
+                    
+                except (json.JSONDecodeError, ValueError) as e:
+                    logger.warning(f"Phase {idx+1} attempt {attempt+1} failed: {e}")
+                    if attempt == max_retries - 1:
+                        raise ValueError(f"Failed to generate phase {idx+1} after {max_retries} attempts: {e}")
+                    continue
+                    
+                except Exception as e:
+                    logger.error(f"Error generating phase {idx+1}: {e}")
+                    raise
+        
+        DAY_ORDER = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+        for phase in complete_plan["phases"]:
+            phase["weekly_schedule"].sort(
+                key=lambda day: DAY_ORDER.index(day["day"])
+            )
+
+        return complete_plan
+
+    def _create_phase_specific_prompt(
+        self, 
+        data: PhasePlanRequest,
+        phase: Dict[str, Any],
+        filtered_exercises: List[Dict[str, Any]],
+        sessions_per_week: int,
+        previous_analysis: Optional[str] = None
+    ) -> str:
+        """Create a prompt for generating a single phase's weekly schedule."""
+        
+        # Convert exercises to minimal JSON
+        minimal_exercises = []
+        for ex in filtered_exercises[:20]:  # Limit to top 20 to save tokens
+            minimal_ex = {
+                "name": ex["name"],
+                "type": ex["type"],
+                "time_required": ex.get("time_required", 30)
+            }
+            minimal_exercises.append(minimal_ex)
+        
+        exercises_json = json.dumps(minimal_exercises, indent=2)
+        
+        # Phase-specific guidance
+        phase_guidance = {
+            "base": """
+    For this BASE phase, prioritize:
+    - Strength development (fingerboard, max boulders)
+    - Building work capacity (anaerobic capacity)
+    - Addressing weaknesses identified in the climber profile
+    - Maintaining aerobic base with at least one endurance session per week
+    """,
+            "peak": """
+    For this PEAK phase, prioritize:
+    - Power-endurance work (anaerobic power, aerobic power)
+    - Route-specific training
+    - Maintaining strength with reduced volume
+    - Quality over quantity - higher intensity, lower volume
+    """,
+            "taper": """
+    For this TAPER phase:
+    - Reduce total volume by 40-50%
+    - Maintain intensity on key exercises
+    - Focus on feeling fresh and recovered
+    - Include more technique and movement work
+    - Avoid introducing new exercises or stimuli
+    """
+        }
+        
+        prompt = f"""
+    You are generating the weekly schedule for a single phase of a climbing training plan.
+
+    Phase: {phase['name']}
+    Phase Type: {phase['type']} 
+    Duration: {phase['weeks']} weeks
+    Description: {phase['description']}
+
+    Climber Profile:
+    - Current grade: {data.current_climbing_grade}
+    - Weaknesses: {data.perceived_weaknesses}
+    - Available time: {data.time_per_session} per session
+    - Sessions per week: {sessions_per_week}
+
+    {phase_guidance.get(phase['type'], '')}
+
+    Available exercises (already filtered for this phase):
+    {exercises_json}
+
+    CRITICAL RULES:
+    1. You must ONLY use exercise names exactly as they appear above
+    2. Create exactly {sessions_per_week} training days
+    3. Each session should fit within the time constraint
+    4. Follow proper exercise ordering: high intensity → lower intensity
+    5. Include appropriate warm-up and cool-down
+
+    Return a JSON object with ONLY a "weekly_schedule" array containing {sessions_per_week} days.
+    Each day should have:
+    - "day": Day of the week (e.g., "Monday", "Wednesday", "Friday", "Sunday")
+    - "focus": The exercise name(s) joined with " + " if multiple
+    - "details": Detailed workout instructions including:
+    - Warm-up protocol
+    - Main exercises with sets, reps, rest periods
+    - Cool-down
+    - Total time estimate
+
+    Example format:
+    {{
+        "weekly_schedule": [
+            {{
+                "day": "Monday",
+                "focus": "Fingerboard Max Hangs + Core Circuit",
+                "details": "Warm-up: 15 min easy climbing, progressing to harder grades. Fingerboard Max Hangs: 5 sets of 10-second hangs on 18mm edge at 85% effort, 3 min rest between. Core Circuit: 3 rounds of 10 hanging knee raises, 30s plank, 10 Russian twists. Cool-down: 5 min easy traverse."
+            }}
+        ]
+    }}
+
+    Generate the weekly schedule now:
+    """
+        
+        return prompt
+
+    def _validate_phase_exercises(
+        self, 
+        phase_schedule: Dict[str, Any], 
+        valid_names: List[str]
+    ) -> Dict[str, Any]:
+        """Validate and fix exercise names in a phase schedule."""
+        from difflib import get_close_matches
+        
+        fixed_schedule = phase_schedule.copy()
+        
+        if "weekly_schedule" in fixed_schedule:
+            for day in fixed_schedule["weekly_schedule"]:
+                focus = day.get("focus", "")
+                focus_parts = [part.strip() for part in focus.split("+")]
+                fixed_parts = []
+                
+                for part in focus_parts:
+                    if part in valid_names:
+                        fixed_parts.append(part)
                     else:
-                        logger.error(f"Invalid exercise '{part}' - no close match found")
-                        # Skip this exercise
-            
-            if fixed_parts:
-                day["focus"] = " + ".join(fixed_parts)
-    
-    return fixed_schedule
+                        # Try fuzzy matching
+                        matches = get_close_matches(part, valid_names, n=1, cutoff=0.8)
+                        if matches:
+                            fixed_parts.append(matches[0])
+                            logger.warning(f"Auto-fixed exercise: '{part}' -> '{matches[0]}'")
+                        else:
+                            logger.error(f"Invalid exercise '{part}' - no close match found")
+                            # Skip this exercise
+                
+                if fixed_parts:
+                    day["focus"] = " + ".join(fixed_parts)
+        
+        return fixed_schedule

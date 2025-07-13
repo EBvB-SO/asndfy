@@ -234,6 +234,10 @@ class ExerciseFilterService:
             if ex_name in fingerboard_exercises and (experience_level == "beginner" or (boulder_grade_value or 0) < 4):
                 continue
 
+            # ROUTE‐SPECIFIC FILTER: if no pocket feature, skip pocket‐only hangs
+            if "pocket" in ex_name.lower() and not route_features.get("is_pockety", False):
+                continue
+
             
             # SCORING SYSTEM
             
@@ -307,7 +311,16 @@ class ExerciseFilterService:
             ex["time_required"] = time_required
             
             # Phase‐based adjustment (must happen before we decide inclusion)
-            score += phase_weights.get(phase_type, {}).get(ex_type, 0)
+            # dynamic boost for endurance routes/weaknesses
+            # pull your base weights
+            dyn_weights = phase_weights.get(phase_type, {}).copy()
+            if route_features.get("is_endurance", False) and attribute_ratings.get("endurance", 3) <= 2:
+                # boost aerobic_capacity heavily in base, aerobic_power in peak
+                if phase_type == "base" and ex_type == "aerobic_capacity":
+                    dyn_weights["aerobic_capacity"] += 3
+                if phase_type == "peak" and ex_type == "aerobic_power":
+                    dyn_weights["aerobic_power"] += 2
+            score += dyn_weights.get(ex_type, 0)
 
             # Record the final score and include only positive‐scoring exercises
             ex["score"] = score
