@@ -902,6 +902,8 @@ Return only JSON with a top‐level structure containing route_overview, trainin
                     DAY_INTENSITY_ORDER = {
                         # === Highest-intensity “strength/power” ===
                         "Campus Board Exercises":               0,
+                        "Campus Board Exercises (Power)":       0,
+                        "Campus Board Exercises (Strength)":    0,
                         "Explosive Pull-Ups":                   0,
                         "Fingerboard Max Hangs":                0,
                         "Fingerboard Max Hangs (Crimps)":       0,  
