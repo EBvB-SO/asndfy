@@ -900,10 +900,42 @@ Return only JSON with a top‐level structure containing route_overview, trainin
                                     })
                     # —— NEW: enforce high‐intensity exercises first in each session —— #
                     DAY_INTENSITY_ORDER = {
-                        "Max Boulder Sessions": 0,
-                        "Campus Board Exercises": 0,
-                        "Fingerboard Max Hangs": 0,
-                        # you can add more mappings here…
+                        # === Highest-intensity “strength/power” stuff ===
+                        "Campus Board Exercises":       0,
+                        "Fingerboard Max Hangs":        0,
+                        "Fingerboard Max Hangs (crimps)": 0,  
+                        "Fingerboard Max Hangs (pockets)": 0,      
+                        "Fingerboard Max Hangs (slopers)": 0,    
+                        "Fingerboard Max Hangs (drag)": 0,    
+                        "Max Boulder Sessions":         1,
+                        "Boulder Pyramids":             1,
+
+                        # === Power-endurance / anaerobic-capacity ===
+                        "Boulder Intervals":            2,
+                        "Boulder 4x4s":                 2,
+                        "Density Hangs":                2,
+                        "Fingerboard Repeater Blocks":  2,
+
+                        # === Aerobic-power / linked circuits ===
+                        "Route 4x4s":                   3,
+                        "Mixed Intensity Laps":         3,
+                        "X-On, X-Off Intervals":        3,
+
+                        # anything else you want to treat as “lowest”:
+                        "Volume Bouldering":            4,
+
+                        # === Aerobic-capacity / endurance ARC ===
+                        "Continuous Low-Intensity Climbing": 5,
+                        "Linked Laps":                      5,
+
+                        # === Core work ===
+                        "V":            6,
+
+                        # === Technique / skill drills (lowest “physical” intensity) ===
+                        "Silent Feet Drills":           10,
+                        "Flagging Practice":            10,
+                        "High-Step Drills":             10,
+                        "Slow Climbing":                10
                     }
 
                     def sort_focus(focus_str):
