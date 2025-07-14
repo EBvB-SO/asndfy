@@ -83,7 +83,7 @@ class ExerciseFilterService:
         
         weights = base_weights.get(phase_type, {}).copy()
         
-        # MAJOR ADJUSTMENTS for endurance routes with endurance weakness
+        # ADJUSTMENTS for endurance routes with endurance weakness
         if route_features.get("is_endurance", False):
             endurance_rating = attribute_ratings.get("endurance", 3)
             
