@@ -4,8 +4,8 @@
 DESCRIPTION_KEYWORDS = {
     "is_endurance": {
         "keywords": [
-            "sustained", "stamina", "endurance", "pump",
-            "all-day", "continuous", "long sequences", "long"],
+            "sustained", "stamina", "endurance", "pump", "longish", "long-ish",
+            "all-day", "continuous", "long sequences", "long", "marathon"],
         "challenge": "endurance"
     },
 
