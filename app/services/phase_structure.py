@@ -167,7 +167,35 @@ class PhaseStructureService:
         
         phases = []
         
-        if route_is_endurance and not needs["strength"]:
+        if route_is_endurance and needs["endurance"]:
+            # Split more evenly to allow adequate endurance development
+            if weeks <= 6:
+                base_weeks = weeks // 2
+                peak_weeks = weeks - base_weeks
+            else:
+                # For 7-8 weeks, give more time to peak phase for endurance
+                base_weeks = 3
+                peak_weeks = weeks - base_weeks
+            
+            phases.extend([
+                {
+                    "name": f"Aerobic Base Building (Weeks 1-{base_weeks})",
+                    "type": "base",
+                    "weeks": base_weeks,
+                    "description": "Build aerobic capacity and climbing volume. Focus on continuous climbing, ARC training, and building a strong endurance foundation while maintaining finger strength."
+                },
+                {
+                    "name": f"Power-Endurance Development (Weeks {base_weeks+1}-{weeks})",
+                    "type": "peak",
+                    "weeks": peak_weeks,
+                    "description": "Transition to route-specific power-endurance. Focus on 4x4s, intervals, and sustained climbing at higher intensities to match route demands."
+                }
+            ])
+        elif route_is_endurance and not needs["strength"]:
+            # Original logic for endurance routes when already strong
+            base_weeks = weeks // 2
+            peak_weeks = weeks - base_weeks
+            
             phases.extend([
                 {
                     "name": f"Base Conditioning (Weeks 1-{base_weeks})",

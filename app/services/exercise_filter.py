@@ -8,14 +8,6 @@ import app.db.db_access as db
 
 logger = logging.getLogger(__name__)
 
-# PHASE WEIGHTS: boost or dampen certain energy systems per phase
-phase_weights = {
-    "base":  {"strength": +3, "anaerobic_capacity": +2, "aerobic_capacity": +1, "power": 0},
-    "peak":  {"anaerobic_power": +2, "aerobic_power": +2, "power": +1, "strength": 0, "anaerobic_capacity": -1, "aerobic_capacity": -1},
-    "taper": {"strength": -1, "power": -1, "aerobic_capacity":  0},
-}
-
-
 class ExerciseFilterService:
     """Service for filtering and ranking exercises based on route and climber profile"""
     
@@ -41,14 +33,11 @@ class ExerciseFilterService:
             # Default facilities if none specified
             return set([
                 "bouldering_wall", 
-                "lead_wall", 
                 "fingerboard", 
                 "campus_board", 
                 "pullup_bar", 
                 "climbing_board",
-                "spray_wall",
                 "circuit_board",
-                "weights"
             ])
         
         # Parse the user's input
@@ -81,6 +70,49 @@ class ExerciseFilterService:
         
         return facilities
     
+    def get_phase_weights(self, phase_type: str, route_features: Dict[str, Any], attribute_ratings: Dict[str, int]) -> Dict[str, int]:
+        """Get phase weights adjusted for route type and climber weaknesses."""
+        
+        # Base weights for different phase types
+        base_weights = {
+            "base":  {"strength": +3, "anaerobic_capacity": +2, "aerobic_capacity": +1, "power": 0},
+            "peak":  {"anaerobic_power": +2, "aerobic_power": +2, "power": +1, "strength": 0, 
+                      "anaerobic_capacity": -1, "aerobic_capacity": -1},
+            "taper": {"strength": -1, "power": -1, "aerobic_capacity": 0},
+        }
+        
+        weights = base_weights.get(phase_type, {}).copy()
+        
+        # MAJOR ADJUSTMENTS for endurance routes with endurance weakness
+        if route_features.get("is_endurance", False):
+            endurance_rating = attribute_ratings.get("endurance", 3)
+            
+            if endurance_rating <= 2:  # Weak in endurance
+                if phase_type == "base":
+                    # Heavily prioritize building aerobic base
+                    weights["aerobic_capacity"] += 5  # was +1, now +6 total
+                    weights["strength"] -= 1  # was +3, now +2 total
+                    
+                elif phase_type == "peak":
+                    # Focus on power-endurance
+                    weights["aerobic_power"] += 4  # was +2, now +6 total
+                    weights["anaerobic_power"] += 2  # was +2, now +4 total
+                    weights["aerobic_capacity"] = 0  # was -1, now 0 (maintain)
+        
+        # For power routes with power weakness
+        elif route_features.get("is_power", False):
+            power_rating = attribute_ratings.get("power", 3)
+            
+            if power_rating <= 2:  # Weak in power
+                if phase_type == "base":
+                    weights["strength"] += 2  # Extra strength focus
+                    weights["power"] += 2
+                elif phase_type == "peak":
+                    weights["power"] += 3
+                    weights["anaerobic_power"] += 1
+        
+        return weights
+    
     def filter_exercises_enhanced(self, exercises: List[Dict[str, Any]], data: PhasePlanRequest, route_features: Dict[str, Any], phase_type: str, phase_weeks: int) -> List[Dict[str, Any]]:
         """
         Enhanced filter with exercise ranking based on route and climber profile.
@@ -112,7 +144,7 @@ class ExerciseFilterService:
         boulder_grade = data.max_boulder_grade.upper().strip()
         climbing_grade = data.current_climbing_grade.lower().strip()
 
-        # Simple parse: “V5+” → 5, “V4” → 4, else None
+        # Simple parse: "V5+" → 5, "V4" → 4, else None
         m = re.match(r"V(\d+)", boulder_grade)
         boulder_grade_value = int(m.group(1)) if m else None
 
@@ -241,15 +273,15 @@ class ExerciseFilterService:
             
             # SCORING SYSTEM
             
-            # 1. Route-specific relevance
+            # 1. Route-specific relevance (INCREASED SCORES)
             if route_features.get("is_endurance", False) and ex_name in endurance_exercises:
-                score += 5
-            
+                score += 8  # was 5
+                
             if route_features.get("is_power", False) and ex_name in power_exercises:
-                score += 5
-            
+                score += 8  # was 5
+                
             if route_features.get("is_technical", False) and ex_name in technique_exercises:
-                score += 5
+                score += 6  # was 5
             
             if route_features.get("is_crimpy", False) and ex_name in fingerboard_exercises:
                 score += 4
@@ -274,18 +306,41 @@ class ExerciseFilterService:
             
             for keyword, related_exercises in weakness_keywords.items():
                 if any(keyword in w for w in weaknesses) and ex_name in related_exercises:
-                    score += 4
+                    score += 6  # was 4
                     break
             
-            # 3. Essential exercises (must include)
-            essential_exercises = {
-                "Fingerboard Max Hangs": 3, 
-                "Max Boulder Sessions": 3, 
-                "Board Sessions": 3,
-                "Boulder Pyramids": 2,
-                "Boulder 4x4s": 2,
-                "Continuous Low-Intensity Climbing": 2
-            }
+            # 3. Essential exercises (must include) - ADJUSTED FOR ROUTE TYPE
+            if route_features.get("is_endurance", False):
+                # Endurance route essentials
+                essential_exercises = {
+                    "Continuous Low-Intensity Climbing": 4,  # Highest priority
+                    "Route 4x4s": 3,
+                    "Boulder 4x4s": 3,
+                    "Linked Laps": 3,
+                    "X-On, X-Off Intervals": 2,
+                    "Fingerboard Max Hangs": 1,  # Still include but lower priority
+                    "Max Boulder Sessions": 1,
+                }
+            elif route_features.get("is_power", False):
+                # Power route essentials
+                essential_exercises = {
+                    "Fingerboard Max Hangs": 4,
+                    "Max Boulder Sessions": 4,
+                    "Campus Board Exercises": 3,
+                    "Board Sessions": 3,
+                    "Boulder Pyramids": 2,
+                    "Short Boulder Repeats": 2,
+                }
+            else:
+                # Balanced route essentials
+                essential_exercises = {
+                    "Fingerboard Max Hangs": 3,
+                    "Max Boulder Sessions": 3,
+                    "Board Sessions": 3,
+                    "Boulder Pyramids": 2,
+                    "Boulder 4x4s": 2,
+                    "Continuous Low-Intensity Climbing": 2
+                }
             
             if ex_name in essential_exercises:
                 score += essential_exercises[ex_name]
@@ -310,22 +365,15 @@ class ExerciseFilterService:
             # Record the final score and time requirement
             ex["time_required"] = time_required
             
-            # Phase‐based adjustment (must happen before we decide inclusion)
-            # dynamic boost for endurance routes/weaknesses
-            # pull your base weights
-            dyn_weights = phase_weights.get(phase_type, {}).copy()
-            if route_features.get("is_endurance", False) and attribute_ratings.get("endurance", 3) <= 2:
-                # boost aerobic_capacity heavily in base, aerobic_power in peak
-                if phase_type == "base" and ex_type == "aerobic_capacity":
-                    dyn_weights["aerobic_capacity"] += 3
-                if phase_type == "peak" and ex_type == "aerobic_power":
-                    dyn_weights["aerobic_power"] += 2
-            score += dyn_weights.get(ex_type, 0)
+            # Phase-based adjustment (must happen before we decide inclusion)
+            # Use the new get_phase_weights method
+            phase_weights = self.get_phase_weights(phase_type, route_features, attribute_ratings)
+            score += phase_weights.get(ex_type, 0)
 
-            # Record the final score and include only positive‐scoring exercises
+            # Record the final score and include only positive-scoring exercises
             ex["score"] = score
             if score > 0:
-               ranked_exercises.append(ex)
+                ranked_exercises.append(ex)
 
         # Sort by score (descending)
         ranked_exercises.sort(key=lambda x: x["score"], reverse=True)
