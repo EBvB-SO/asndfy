@@ -898,44 +898,80 @@ Return only JSON with a top‐level structure containing route_overview, trainin
                                         "name": focus_part,
                                         "details": exercise_detail or original_details
                                     })
-                    # —— NEW: enforce high‐intensity exercises first in each session —— #
+                    # —— Enforce high‐intensity exercises first in each session —— #
                     DAY_INTENSITY_ORDER = {
-                        # === Highest-intensity “strength/power” stuff ===
-                        "Campus Board Exercises":       0,
-                        "Fingerboard Max Hangs":        0,
-                        "Fingerboard Max Hangs (crimps)": 0,  
-                        "Fingerboard Max Hangs (pockets)": 0,      
-                        "Fingerboard Max Hangs (slopers)": 0,    
-                        "Fingerboard Max Hangs (drag)": 0,    
-                        "Max Boulder Sessions":         1,
-                        "Boulder Pyramids":             1,
+                        # === Highest-intensity “strength/power” ===
+                        "Campus Board Exercises":               0,
+                        "Explosive Pull-Ups":                   0,
+                        "Fingerboard Max Hangs":                0,
+                        "Fingerboard Max Hangs (Crimps)":       0,  
+                        "Fingerboard Max Hangs (Pockets)":      0,      
+                        "Fingerboard Max Hangs (Slopers)":      0,    
+                        "Fingerboard Max Hangs (Drag)":         0, 
+                        "Campus Bouldering":                    1,   
+                        "Max Boulder Sessions":                 2,
+                        "Board Session":                        2,
+                        "Boulder Pyramids":                     2,
+                        "Weighted Pull-Ups":                    4,
+                        "One-Arm Lock-Offs":                    4,
+                        "Boulder Intervals":                    5,
 
-                        # === Power-endurance / anaerobic-capacity ===
-                        "Boulder Intervals":            2,
-                        "Boulder 4x4s":                 2,
-                        "Density Hangs":                2,
-                        "Fingerboard Repeater Blocks":  2,
+                        # === Anaerobic-capacity ===
+                        "Long Boulder Circuits":                6,
+                        "Boulder Triples":                      6,
+                        "Linked Bouldering Circuits":           6,
+                        "Campus Laddering":                     6,
+                        "Fingerboard Repeater Blocks":          6,
+                        "Multiple Set Boulder Circuits":        6,
+                        "Density Hangs":                        6,
+ 
+                        # === Anaerobic-power ===
+                        "Short Boulder Repeats":                6,
+                        "Broken Circuits":                      6,
+                        "Max Intensity Redpoints":              6,
 
-                        # === Aerobic-power / linked circuits ===
-                        "Route 4x4s":                   3,
-                        "Mixed Intensity Laps":         3,
-                        "X-On, X-Off Intervals":        3,
+                        # === Aerobic-power ===
+                        "Boulder 4x4s":                         8,
+                        "3x3 Bouldering Circuits":              8,  
+                        "Intensive Foot-On Campus":             8,
+                        "30-Move Circuits":                     8,
+                        "On-The-Minute Bouldering":             8,
 
-                        # anything else you want to treat as “lowest”:
-                        "Volume Bouldering":            4,
+                        # === Aerobic-power ===
+                        "Volume Bouldering":                    10,
+                        "Free Bouldering":                      11,
 
-                        # === Aerobic-capacity / endurance ARC ===
-                        "Continuous Low-Intensity Climbing": 5,
-                        "Linked Laps":                      5,
+                        # === Aerobic-capacity / ARC ===
+                        "Continuous Low-Intensity Climbing":    12,
+                        "Mixed Intensity Laps":                 12,
+                        "X-On, X-Off Intervals":                12,
+                        "Route 4x4s":                           12,
+                        "Linked Laps":                          12,
+                        "Low Intensity Fingerboarding":         12,
+                        "Foot-On Campus Endurance":             12,
 
                         # === Core work ===
-                        "V":            6,
+                        "Front Lever Progressions":             14,
+                        "Hanging Knee Raises":                  16,
+                        "Window Wipers":                        16,
+                        "Plank":                                16,
+                        "Hanging Leg Raises":                   16,
 
-                        # === Technique / skill drills (lowest “physical” intensity) ===
-                        "Silent Feet Drills":           10,
-                        "Flagging Practice":            10,
-                        "High-Step Drills":             10,
-                        "Slow Climbing":                10
+                        # === Technique / skill drills ===
+                        "Silent Feet Drills":                   20,
+                        "Flagging Practice":                    20,
+                        "High-Step Drills":                     20,
+                        "Slow Climbing":                        20,
+                        "Dynamic Movement Practice":            20,
+                        "Rest Position Training":               20,
+                        "Open-Hand Grip Practice":              20,
+                        "Cross-Through Drills":                 20,
+
+                        # === Mobility ===
+                        "Flexibility and Mobility Circuit":     24,
+                        "Dynamic Hip Mobility":                 24,
+                        "Shoulder Mobility Flow":               24,
+                        "Ankle and Foot Mobility":              24,
                     }
 
                     def sort_focus(focus_str):

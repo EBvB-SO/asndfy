@@ -174,12 +174,12 @@ class ExerciseFilterService:
                 weaknesses.add(weakness.strip())
         
         # Exercise categorization by safety concerns and type
-        campus_exercises = {"Campus Board Exercises", "Campus Laddering", "Intensive Foot-On Campus"}
-        fingerboard_exercises = {"Fingerboard Max Hangs", "Fingerboard Repeater Blocks", "Low Intensity Fingerboarding", "Density Hangs"}
+        campus_exercises = {"Campus Board Exercises"}
+        fingerboard_exercises = {"Fingerboard Max Hangs", "Fingerboard Repeater Blocks", "Fingerboard Max Hangs (Crimps)", "Fingerboard Max Hangs (Pockets)", "Fingerboard Max Hangs (Slopers)", "Fingerboard Max Hangs (Drag)"}
         power_exercises = {"Max Boulder Sessions", "Short Boulder Repeats", "Explosive Pull-Ups", "Broken Circuits"}
         endurance_exercises = {"Continuous Low-Intensity Climbing", "Route 4x4s", "Linked Laps", "X-On, X-Off Intervals", "Mixed Intensity Laps"}
         technique_exercises = {"Silent Feet Drills", "Flagging Practice", "High-Step Drills", "Slow Climbing", "Cross-Through Drills", "Open-Hand Grip Practice"}
-        pocket_exercises = {"Fingerboard Max Hangs", "Fingerboard Repeater Blocks", "Density Hangs"}
+        pocket_exercises = {"Fingerboard Max Hangs (Pockets)"}
         
         # Define exercise compatibility
         exercise_compatibility = {
