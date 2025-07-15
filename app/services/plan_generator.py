@@ -59,8 +59,13 @@ class PlanGeneratorService:
             "is_crimpy": False,
             "is_slopey": False,
             "is_pockety": False,
+            "is_pumpy": False,
+            "is_sustained": False,
+            "is_bouldery": False,
+            "is_dynamic": False,
             "primary_style": "mixed",
-            "key_challenges": []
+            "key_challenges": [],
+            "route_style": None  # Store the actual style selection
         }
         
         # 3) Preserve the raw grade string for downstream use
@@ -68,6 +73,49 @@ class PlanGeneratorService:
         
         # Now incorporate user-provided route characteristics if available
         if user_data:
+            # Route Style
+            if user_data.route_style:
+                style = user_data.route_style.lower()
+                features["route_style"] = user_data.route_style
+
+                if "bouldery" in style:
+                    features["is_bouldery"] = True
+                    features["is_power"] = True
+                    features["key_challenges"].append("bouldery sequences")
+                
+                elif "pumpy" in style:
+                    features["is_pumpy"] = True
+                    features["is_endurance"] = True
+                    features["key_challenges"].append("pump management")
+                    
+                elif "sustained" in style:
+                    features["is_sustained"] = True
+                    features["is_endurance"] = True
+                    features["key_challenges"].append("sustained effort")
+                    
+                elif "endurance" in style and "focused" in style:
+                    features["is_endurance"] = True
+                    features["key_challenges"].append("endurance")
+                    
+                elif "power" in style and "endurance" in style:
+                    features["is_pumpy"] = True  # Power-endurance is pumpy
+                    features["is_endurance"] = True
+                    features["is_power"] = True
+                    features["key_challenges"].append("power-endurance")
+                    
+                elif "technical" in style:
+                    features["is_technical"] = True
+                    features["key_challenges"].append("technical movement")
+                    
+                elif "dyno" in style or "dynamic" in style:
+                    features["is_dynamic"] = True
+                    features["is_power"] = True
+                    features["key_challenges"].append("dynamic movement")
+                    
+                elif "fingery" in style:
+                    features["is_crimpy"] = True
+                    features["key_challenges"].append("finger strength")
+            
             # Route angles
             if user_data.route_angles:
                 angles = [angle.strip().lower() for angle in user_data.route_angles.split(",")]
@@ -122,7 +170,10 @@ class PlanGeneratorService:
                             features["key_challenges"].append(cfg["challenge"])
         
         # Set primary style based on detected features
-        if features["is_steep"] and features["is_power"]:
+        if features.get("route_style"):
+            # Use the explicitly selected style as primary
+            features["primary_style"] = features["route_style"].lower()
+        elif features["is_steep"] and features["is_power"]:
             features["primary_style"] = "powerful overhanging"
         elif features["is_steep"] and features["is_endurance"]:
             features["primary_style"] = "endurance overhanging"
@@ -134,6 +185,11 @@ class PlanGeneratorService:
             features["primary_style"] = "technical crimping"
         elif features["is_pockety"]:
             features["primary_style"] = "pocket-intensive"
+        elif features["is_pumpy"]:
+            features["primary_style"] = "pumpy"
+        elif features["is_bouldery"]:
+            features["primary_style"] = "bouldery"
+    
         
         # Remove duplicate key challenges
         features["key_challenges"] = list(dict.fromkeys(features["key_challenges"]))

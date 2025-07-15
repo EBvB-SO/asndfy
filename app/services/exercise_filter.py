@@ -82,6 +82,30 @@ class ExerciseFilterService:
         
         weights = base_weights.get(phase_type, {}).copy()
         
+        # Route style specific phase adjustments
+        if "route_style" in route_features:
+            style = route_features.get("route_style", "").lower()
+            
+            if "pumpy" in style:
+                if phase_type == "base":
+                    weights["anaerobic_capacity"] += 3
+                elif phase_type == "peak":
+                    weights["anaerobic_power"] += 2
+                    
+            elif "bouldery" in style:
+                if phase_type == "base":
+                    weights["strength"] += 2
+                    weights["power"] += 2
+                elif phase_type == "peak":
+                    weights["power"] += 3
+                    
+            elif "sustained" in style:
+                weights["aerobic_capacity"] += 3 if phase_type == "base" else 1
+                
+            elif "technical" in style:
+                # Technique work gets priority throughout
+                weights["technique"] = 2
+        
         # ADJUSTMENTS for endurance routes with endurance weakness
         if route_features.get("is_endurance", False):
             endurance_rating = attribute_ratings.get("endurance", 3)
@@ -271,6 +295,49 @@ class ExerciseFilterService:
 
             
             # SCORING SYSTEM
+
+            # Route style specific scoring
+            if route_features.get("route_style"):
+                style = route_features["route_style"].lower()
+                
+                if "pumpy" in style:
+                    # Prioritize anaerobic capacity exercises
+                    if ex_name in {"Boulder 4x4s", "Long Boulder Circuits", "Boulder Triples", 
+                                "Linked Bouldering Circuits", "Route 4x4s"}:
+                        score += 6
+                        
+                elif "bouldery" in style:
+                    # Prioritize power and strength
+                    if ex_name in power_exercises or ex_name in {"Boulder Pyramids", "Board Session"}:
+                        score += 6
+                        
+                elif "sustained" in style:
+                    # Prioritize aerobic capacity
+                    if ex_name in {"Continuous Low-Intensity Climbing", "Linked Laps", 
+                                "Mixed Intensity Laps", "X-On, X-Off Intervals"}:
+                        score += 6
+                        
+                elif "power-endurance" in style:
+                    # Balance of power and endurance
+                    if ex_name in {"30-Move Circuits", "On-The-Minute Bouldering", 
+                                "3x3 Bouldering Circuits", "Boulder 4x4s"}:
+                        score += 6
+                        
+                elif "technical" in style:
+                    # Prioritize technique and precision
+                    if ex_name in technique_exercises:
+                        score += 8
+                        
+                elif "dyno" in style or "dynamic" in style:
+                    # Prioritize explosive movements
+                    if ex_name in {"Campus Board Exercises", "Explosive Pull-Ups", 
+                                "Dynamic Movement Practice"}:
+                        score += 6
+                        
+                elif "fingery" in style:
+                    # Extra emphasis on finger strength
+                    if ex_name in fingerboard_exercises or "crimp" in ex_name.lower():
+                        score += 6
             
             # 1. Route-specific relevance (INCREASED SCORES)
             if route_features.get("is_endurance", False) and ex_name in endurance_exercises:

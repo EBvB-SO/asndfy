@@ -17,6 +17,7 @@ def make_phase_request() -> PhasePlanRequest:
         route_angles="Overhanging",
         route_lengths="Long",
         hold_types="Crimpy",
+        route_style="Sustained",  # Added route_style
         route_description="Sustained crimpy climbing with a hard crux near the top",
         weeks_to_train="8",
         sessions_per_week="4",

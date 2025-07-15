@@ -28,6 +28,7 @@ class PhasePlanRequest(BaseModel):
     route_angles: str = ""  # Comma-separated values (e.g. "Slab, Vertical")
     route_lengths: str = ""  # Comma-separated values (e.g. "Short, Medium")
     hold_types: str = ""     # Comma-separated values (e.g. "Crimpy, Jugs")
+    route_style: str = ""    # Single value (e.g. "Pumpy", "Bouldery", etc.)
     route_description: str = ""  # Free-form text about the route
     
     # These fields are now primarily defined in GeneratePlanView instead of profile
