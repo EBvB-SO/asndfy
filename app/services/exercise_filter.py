@@ -28,47 +28,46 @@ class ExerciseFilterService:
         return result
     
     def parse_available_facilities(self, facilities_str: str) -> Set[str]:
-        """Parse a comma-separated facilities string into a set of available facilities."""
         if not facilities_str or facilities_str.lower() in ["none", "n/a", ""]:
-            # Default facilities if none specified
-            return set([
-                "bouldering_wall", 
-                "fingerboard", 
-                "campus_board", 
-                "pullup_bar", 
+            return {
+                "bouldering_wall",
+                "fingerboard",
+                "campus_board",
+                "pullup_bar",
                 "climbing_board",
                 "circuit_board",
-            ])
-        
-        # Parse the user's input
-        facilities = set()
-        
-        # Standard facility names used in the app
-        standard_facilities = {
-            "bouldering_wall", 
-            "lead_wall", 
-            "fingerboard", 
-            "campus_board", 
-            "pullup_bar", 
-            "climbing_board",
+            }
+
+        standard = {
+            "bouldering_wall", "lead_wall", "fingerboard",
+            "campus_board", "pullup_bar", "climbing_board",
+            "spray_wall", "circuit_board", "weights",
+        }
+
+        out = set()
+        for raw in facilities_str.split(","):
+            # normalize into snake_case
+            key = (
+                raw.strip()
+                .lower()
+                .replace(" ", "_")
+                .replace("-", "_")
+            )
+            if key in standard:
+                out.add(key)
+
+        # ensure at least one wall facility
+        if not out.intersection({
+            "bouldering_wall",
+            "lead_wall",
             "spray_wall",
             "circuit_board",
-            "weights"
-        }
-        
-        # Split by commas and process each facility
-        for facility in facilities_str.split(","):
-            facility = facility.strip().lower()
-            
-            # Direct match with standard names
-            if facility in standard_facilities:
-                facilities.add(facility)
-        
-        # Always include at least a bouldering wall if nothing else is specified
-        if not any(facility in facilities for facility in ["bouldering_wall", "lead_wall", "spray_wall", "circuit_board", "climbing_board"]):
-            facilities.add("bouldering_wall")
-        
-        return facilities
+            "climbing_board"
+        }):
+            out.add("bouldering_wall")
+
+        return out
+
     
     def get_phase_weights(self, phase_type: str, route_features: Dict[str, Any], attribute_ratings: Dict[str, int]) -> Dict[str, int]:
         """Get phase weights adjusted for route type and climber weaknesses."""
