@@ -1,6 +1,6 @@
 # app/services/phase_structure.py
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 from app.models.training_plan import PhasePlanRequest
 
 logger = logging.getLogger(__name__)
@@ -93,7 +93,7 @@ class PhaseStructureService:
         sessions_per_week: int, 
         route_features: Dict[str, Any],
         attribute_ratings: Dict[str, int]
-    ) -> List[Dict[str, Any]]:
+    ) -> Tuple[List[Dict[str, Any]], List[str]]:
         """
         Determine optimal phase structure based on all factors.
         
@@ -147,7 +147,7 @@ class PhaseStructureService:
         # Log the phase structure for debugging
         logger.info(f"Generated phase structure for {weeks} weeks: {[p['name'] for p in phases]}")
         
-        return phases
+        return phases, training_days
     
     def _create_short_plan(
         self, weeks: int, needs: Dict[str, bool], 
