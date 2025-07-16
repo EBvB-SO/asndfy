@@ -71,6 +71,21 @@ class PhaseStructureService:
         
         return needs
     
+    def get_training_days(self, sessions_per_week: int) -> List[str]:
+        """
+        Get the optimal training days for a given number of sessions per week.
+        Ensures proper rest between high-intensity sessions.
+        """
+        schedules = {
+            2: ["Tuesday", "Friday"],
+            3: ["Monday", "Wednesday", "Friday"],
+            4: ["Monday", "Tuesday", "Thursday", "Saturday"],
+            5: ["Monday", "Tuesday", "Thursday", "Friday", "Saturday"],
+            6: ["Monday", "Tuesday", "Wednesday", "Friday", "Saturday", "Sunday"],
+        }
+        
+        return schedules.get(sessions_per_week, ["Monday", "Wednesday", "Friday"])
+    
     def determine_phase_structure(
         self, 
         data: PhasePlanRequest, 
@@ -87,8 +102,13 @@ class PhaseStructureService:
         - type: "base", "peak", or "taper"
         - weeks: Duration of phase
         - description: What this phase focuses on
+
+        Returns tuple of (phases, training_days) where:
+        - phases: List of phase dictionaries
+        - training_days: List of days of the week to train on
         """
         phases = []
+        training_days = self.get_training_days(sessions_per_week)
         
         # Analyze climber profile
         years_exp = data.years_experience or self._parse_years_from_text(data.training_experience)

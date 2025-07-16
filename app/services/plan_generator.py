@@ -868,7 +868,7 @@ Return only JSON with a top‐level structure containing route_overview, trainin
         )
         
         # Step 3: Determine phases algorithmically
-        phases = self.phase_structure.determine_phase_structure(
+        phases, training_days = self.phase_structure.determine_phase_structure(
             plan_data,
             weeks,
             sessions,
@@ -877,6 +877,7 @@ Return only JSON with a top‐level structure containing route_overview, trainin
         )
         
         logger.info(f"Determined {len(phases)} phases for {weeks}-week plan")
+        logger.info(f"Training days: {training_days}")
         
         # Step 4: Generate the complete plan
         complete_plan = {
@@ -910,6 +911,7 @@ Return only JSON with a top‐level structure containing route_overview, trainin
                         phase,
                         phase_exercises,
                         sessions,
+                        training_days,
                         previous_analysis
                     )
                     
@@ -1063,6 +1065,7 @@ Return only JSON with a top‐level structure containing route_overview, trainin
                     logger.error(f"Error generating phase {idx+1}: {e}")
                     raise
         
+        # Ensure days are in correct order
         DAY_ORDER = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
         for phase in complete_plan["phases"]:
             phase["weekly_schedule"].sort(
@@ -1077,6 +1080,7 @@ Return only JSON with a top‐level structure containing route_overview, trainin
         phase: Dict[str, Any],
         filtered_exercises: List[Dict[str, Any]],
         sessions_per_week: int,
+        training_days: List[str],
         previous_analysis: Optional[str] = None
     ) -> str:
         """Create a prompt for generating a single phase's weekly schedule."""
@@ -1118,7 +1122,22 @@ Return only JSON with a top‐level structure containing route_overview, trainin
     - Avoid introducing new exercises or stimuli
     """
         }
+
+        # Check if this phase has special emphasis (for endurance routes with endurance weakness)
+        emphasis_guidance = ""
+        if "emphasis" in phase and phase["emphasis"] == "aerobic_capacity":
+            emphasis_guidance = """
+    SPECIAL EMPHASIS FOR THIS PHASE:
+    - This climber has WEAK ENDURANCE for an ENDURANCE ROUTE
+    - Include AT LEAST 2-3 aerobic capacity sessions per week
+    - Prioritize climbing-based endurance work (Continuous Low-Intensity Climbing, Route 4x4s, Mixed Intensity Laps)
+    - Only use Low Intensity Fingerboarding as a supplement, not as primary endurance work
+    - Strength work should be minimal - just maintenance
+    """
         
+        # Format training days
+        days_str = ", ".join([f'"{day}"' for day in training_days])
+
         prompt = f"""
     You are generating the weekly schedule for a single phase of a climbing training plan.
 
@@ -1141,13 +1160,16 @@ Return only JSON with a top‐level structure containing route_overview, trainin
     CRITICAL RULES:
     1. You must ONLY use exercise names exactly as they appear above
     2. Create exactly {sessions_per_week} training days
-    3. Each session should fit within the time constraint
-    4. Follow proper exercise ordering: high intensity → lower intensity
-    5. Include appropriate warm-up and cool-down
+    3. Use ONLY these days: [{days_str}]
+        - This ensures proper rest between high-intensity sessions
+        - Do NOT use any other days
+    4. Each session should fit within the time constraint
+    5. Follow proper exercise ordering: high intensity → lower intensity
+    6. Include appropriate warm-up and cool-down
 
     Return a JSON object with ONLY a "weekly_schedule" array containing {sessions_per_week} days.
     Each day should have:
-    - "day": Day of the week (e.g., "Monday", "Wednesday", "Friday", "Sunday")
+    - "day": Day of the week (must be one of: {days_str})
     - "focus": The exercise name(s) joined with " + " if multiple
     - "details": Detailed workout instructions including:
     - Warm-up protocol
@@ -1159,7 +1181,7 @@ Return only JSON with a top‐level structure containing route_overview, trainin
     {{
         "weekly_schedule": [
             {{
-                "day": "Monday",
+                "day": "{training_days[0]}",
                 "focus": "Fingerboard Max Hangs + Core Circuit",
                 "details": "Warm-up: 15 min easy climbing, progressing to harder grades. Fingerboard Max Hangs: 5 sets of 10-second hangs on 18mm edge at 85% effort, 3 min rest between. Core Circuit: 3 rounds of 10 hanging knee raises, 30s plank, 10 Russian twists. Cool-down: 5 min easy traverse."
             }}
