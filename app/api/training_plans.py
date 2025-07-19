@@ -18,10 +18,13 @@ from app.core.dependencies import get_current_user_email
 from app.core.redis import redis_client
 from app.api._background import generate_plan_background
 
-
-
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/training_plans", tags=["Training Plans"])
+
+@router.get("/test")
+def test_endpoint():
+    logger.info("Test endpoint hit!")
+    return {"status": "ok", "message": "Backend is reachable"}
 
 # Initialize the plan generator service
 plan_generator = PlanGeneratorService()
@@ -33,8 +36,11 @@ def generate_plan_preview(
     current_user: str = Depends(get_current_user_email)  # require valid JWT
 ):
     """Generate a lightweight preview with route analysis and training approach."""
+    logger.info(f"Received preview request from {current_user}")
+    logger.info(f"Route: {data.route}, Grade: {data.grade}, Crag: {data.crag}")
     try:
         preview = plan_generator.generate_preview(data)
+        logger.info("Preview generated successfully")
         return preview
     except Exception as e:
         logger.error(f"Error generating plan preview: {str(e)}")
@@ -67,6 +73,9 @@ async def generate_full_plan_async(
     current_user: str = Depends(get_current_user_email)
 ):
     """Start plan generation and return immediately with a task ID"""
+    logger.info(f"Received full plan request from {current_user}")
+    logger.info(f"Weeks: {request.weeks_to_train}, Sessions: {request.sessions_per_week}")
+    
     task_id = str(uuid.uuid4())
     
     # Initialize status in Redis

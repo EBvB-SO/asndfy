@@ -43,7 +43,7 @@ def generate_plan_background(
         logger.info(f"[{task_id}] starting background plan generation for {user_email}")
         
         # Generate the plan
-        plan = service.generate_full_plan(request.plan_data, on_progress=update_progress)
+        plan = service.generate_full_plan(request, on_progress=update_progress)
         
         logger.info(f"[{task_id}] generation complete, saving final result")
         

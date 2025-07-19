@@ -174,8 +174,11 @@ class ExerciseFilterService:
         # ————————————————
         # AGE RESTRICTION
         # ————————————————
-        user_age = data.age  # Optional[int]
-
+        raw_age = data.age
+        try:
+            user_age = int(raw_age)
+        except (TypeError, ValueError):
+            user_age = None
         # ————————————————
         # EXPERIENCE LEVEL (years_exp only)
         # ————————————————

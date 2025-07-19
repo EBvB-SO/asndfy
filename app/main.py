@@ -3,6 +3,7 @@
 import os
 import sys
 import logging
+import time
 from dotenv import load_dotenv
 
 from fastapi import FastAPI, Request
@@ -31,7 +32,7 @@ from app.api.exercise_history     import router as history_router
 
 # --- Configure logging ---
 logging.basicConfig(
-    level    = logging.INFO,
+    level    = logging.DEBUG,
     format   = "%(asctime)s %(name)s %(levelname)s %(message)s",
     handlers = [
         logging.StreamHandler(),
@@ -46,6 +47,28 @@ app = FastAPI(
     version     = "2.0.0",
     description = "API for personalized climbing training plans"
 )
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start_time = time.time()
+    # Log the incoming request
+    body = await request.body()
+    logger.info(f"📥 Incoming request: {request.method} {request.url.path}")
+    logger.info(f"Headers: {dict(request.headers)}")
+    if body:
+        logger.info(f"Body size: {len(body)} bytes")
+
+    # Reset body for the actual handler
+    async def receive():
+        return {"type": "http.request", "body": body}
+    request._receive = receive
+
+    response = await call_next(request)
+
+    process_time = time.time() - start_time
+    logger.info(f"Request completed in {process_time:.3f}s with status {response.status_code}")
+    
+    return response
 
 # --- Validation‐error handler (logs raw body + errors) ---
 @app.exception_handler(RequestValidationError)
@@ -144,7 +167,7 @@ if __name__ == "__main__":
 
     uvicorn.run(
         "app.main:app",
-        host   = os.getenv("HOST", "127.0.0.1"),
-        port   = int(os.getenv("PORT", 8001)),
-        reload = True
+        host="0.0.0.0",  # Changed from 127.0.0.1 to 0.0.0.0
+        port=int(os.getenv("PORT", 8001)),
+        reload=True
     )

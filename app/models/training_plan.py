@@ -44,7 +44,7 @@ class PhasePlanRequest(BaseModel):
     perceived_weaknesses: str
     attribute_ratings: str = ""
     years_experience: Optional[float] = None
-    age: Optional[int] = None
+    age: Optional[str] = None
     training_facilities: str
     injury_history: str
     general_fitness: str
