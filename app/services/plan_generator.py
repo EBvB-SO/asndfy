@@ -46,7 +46,7 @@ class PlanGeneratorService:
             - hold_types → is_crimpy / is_slopey / is_pockety
             - route_description → keyword‐map lookup (DESCRIPTION_KEYWORDS)
         Returns a dict of:
-            - boolean flags (is_steep, is_power, …)  
+            - boolean flags (is_steep, is_power, is_technical, is_crimpy, is_slopey, is_endurance, is_pockety, …)  
             - primary_style  
             - key_challenges (list of strings)  
             - grade (raw string)
@@ -218,6 +218,7 @@ class PlanGeneratorService:
         - Angles: {data.route_angles}
         - Lengths: {data.route_lengths}
         - Hold types: {data.hold_types}
+        - Style: {data.route_style}
         - Additional description: {data.route_description}
         
         Climber Profile:
@@ -273,7 +274,7 @@ class PlanGeneratorService:
                 "route_overview": parsed.get("route_overview", ""),
                 "training_approach": parsed.get("training_approach", "")
             }
-                
+        
         except Exception as e:
             logger.error(f"Error generating plan preview: {str(e)}")
             raise
