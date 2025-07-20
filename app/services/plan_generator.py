@@ -902,9 +902,33 @@ Return only JSON with a top‐level structure containing route_overview, trainin
                 phase_weeks=phase['weeks']
             )
             
-            # Try up to 3 times for each phase
+            # Prepare hang‑dedupe helpers once per phase:
+            fingerboard_set = {
+                "Fingerboard Max Hangs", 
+                "Fingerboard Repeater Blocks",
+                "Fingerboard Max Hangs (Crimps)",
+                "Fingerboard Max Hangs (Pockets)",
+                "Fingerboard Max Hangs (Slopers)",
+                "Fingerboard Max Hangs (Drag)",                    
+                "Low Intensity Fingerboarding",
+            }
+            campus_set = {
+                "Campus Board Exercises", 
+                "Campus Bouldering",
+                "Intensive Foot-On Campus",
+            }
+
+            # Build a candidate list of everything *except* hangs:
+            replacement_candidates = [
+                ex["name"]
+                for ex in phase_exercises
+                if ex["name"] not in fingerboard_set 
+                    and ex["name"] not in campus_set
+            
+            ]
             max_retries = 3
             for attempt in range(max_retries):
+
                 try:
                     # Create phase-specific prompt
                     phase_prompt = self._create_phase_specific_prompt(
@@ -957,6 +981,29 @@ Return only JSON with a top‐level structure containing route_overview, trainin
                                         "name": focus_part,
                                         "details": exercise_detail or original_details
                                     })
+
+                    # dedupe hangs + swap in best non-hang
+                    for day in fixed_schedule["weekly_schedule"]:
+                        parts = [p.strip() for p in day["focus"].split("+")]
+
+                        if len(fingerboard_set & set(parts)) > 1:
+                            drop = (fingerboard_set & set(parts)).pop()
+                            parts.remove(drop)
+                            for c in replacement_candidates:
+                                if c not in parts:
+                                    parts.append(c)
+                                    break
+
+                        if len(campus_set & set(parts)) > 1:
+                            drop = (campus_set & set(parts)).pop()
+                            parts.remove(drop)
+                            for c in replacement_candidates:
+                                if c not in parts:
+                                    parts.append(c)
+                                    break
+
+                        day["focus"] = " + ".join(parts)
+
                     # —— Enforce high‐intensity exercises first in each session —— #
                     DAY_INTENSITY_ORDER = {
                         # === Highest-intensity “strength/power” ===
@@ -969,70 +1016,70 @@ Return only JSON with a top‐level structure containing route_overview, trainin
                         "Fingerboard Max Hangs (Pockets)":      0,      
                         "Fingerboard Max Hangs (Slopers)":      0,    
                         "Fingerboard Max Hangs (Drag)":         0, 
-                        "Campus Bouldering":                    1,   
-                        "Max Boulder Sessions":                 2,
-                        "Board Session":                        2,
-                        "Boulder Pyramids":                     2,
+                        "Campus Bouldering":                    2,   
+                        "Max Boulder Sessions":                 4,
+                        "Board Session":                        4,
+                        "Boulder Pyramids":                     4,
                         "Weighted Pull-Ups":                    4,
                         "One-Arm Lock-Offs":                    4,
-                        "Boulder Intervals":                    5,
+                        "Boulder Intervals":                    6,
 
                         # === Anaerobic-capacity ===
-                        "Long Boulder Circuits":                6,
-                        "Boulder Triples":                      6,
-                        "Linked Bouldering Circuits":           6,
-                        "Campus Laddering":                     6,
-                        "Fingerboard Repeater Blocks":          6,
-                        "Multiple Set Boulder Circuits":        6,
-                        "Density Hangs":                        6,
+                        "Long Boulder Circuits":                8,
+                        "Boulder Triples":                      8,
+                        "Linked Bouldering Circuits":           8,
+                        "Campus Laddering":                     8,
+                        "Fingerboard Repeater Blocks":          8,
+                        "Multiple Set Boulder Circuits":        8,
+                        "Density Hangs":                        8,
  
                         # === Anaerobic-power ===
-                        "Short Boulder Repeats":                6,
-                        "Broken Circuits":                      6,
-                        "Max Intensity Redpoints":              6,
+                        "Short Boulder Repeats":                8,
+                        "Broken Circuits":                      8,
+                        "Max Intensity Redpoints":              8,
 
                         # === Aerobic-power ===
-                        "Boulder 4x4s":                         8,
-                        "3x3 Bouldering Circuits":              8,  
-                        "Intensive Foot-On Campus":             8,
-                        "30-Move Circuits":                     8,
-                        "On-The-Minute Bouldering":             8,
+                        "Boulder 4x4s":                         10,
+                        "3x3 Bouldering Circuits":              10,  
+                        "Intensive Foot-On Campus":             10,
+                        "30-Move Circuits":                     10,
+                        "On-The-Minute Bouldering":             10,
 
                         # === Aerobic-power ===
-                        "Volume Bouldering":                    10,
-                        "Free Bouldering":                      11,
+                        "Volume Bouldering":                    12,
+                        "Free Bouldering":                      14,
 
                         # === Aerobic-capacity / ARC ===
-                        "Continuous Low-Intensity Climbing":    12,
-                        "Mixed Intensity Laps":                 12,
-                        "X-On, X-Off Intervals":                12,
-                        "Route 4x4s":                           12,
-                        "Linked Laps":                          12,
-                        "Low Intensity Fingerboarding":         12,
-                        "Foot-On Campus Endurance":             12,
+                        "Continuous Low-Intensity Climbing":    18,
+                        "Mixed Intensity Laps":                 18,
+                        "X-On, X-Off Intervals":                18,
+                        "Route 4x4s":                           18,
+                        "Linked Laps":                          18,
+                        "Low Intensity Fingerboarding":         18,
+                        "Foot-On Campus Endurance":             18,
 
                         # === Core work ===
-                        "Front Lever Progressions":             14,
-                        "Hanging Knee Raises":                  16,
-                        "Window Wipers":                        16,
-                        "Plank":                                16,
-                        "Hanging Leg Raises":                   16,
+                        "Front Lever Progressions":             22,
+                        "Hanging Knee Raises":                  22,
+                        "Window Wipers":                        22,
+                        "Plank":                                22,
+                        "Hanging Leg Raises":                   22,
 
                         # === Technique / skill drills ===
-                        "Silent Feet Drills":                   20,
-                        "Flagging Practice":                    20,
-                        "High-Step Drills":                     20,
-                        "Slow Climbing":                        20,
-                        "Dynamic Movement Practice":            20,
-                        "Rest Position Training":               20,
-                        "Open-Hand Grip Practice":              20,
-                        "Cross-Through Drills":                 20,
+                        "Silent Feet Drills":                   26,
+                        "Flagging Practice":                    26,
+                        "High-Step Drills":                     26,
+                        "Slow Climbing":                        26,
+                        "Dynamic Movement Practice":            26,
+                        "Rest Position Training":               26,
+                        "Open-Hand Grip Practice":              26,
+                        "Cross-Through Drills":                 26,
 
                         # === Mobility ===
-                        "Flexibility and Mobility Circuit":     24,
-                        "Dynamic Hip Mobility":                 24,
-                        "Shoulder Mobility Flow":               24,
-                        "Ankle and Foot Mobility":              24,
+                        "Flexibility and Mobility Circuit":     30,
+                        "Dynamic Hip Mobility":                 30,
+                        "Shoulder Mobility Flow":               30,
+                        "Ankle and Foot Mobility":              30,
                     }
 
                     def sort_focus(focus_str):
@@ -1167,6 +1214,9 @@ Return only JSON with a top‐level structure containing route_overview, trainin
     4. Each session should fit within the time constraint
     5. Follow proper exercise ordering: high intensity → lower intensity
     6. Include appropriate warm-up and cool-down
+    “7. Never combine more than one campus-board or fingerboard exercise in a single session. 
+        If you include a campus-board or fingerboard exercise, the other exercise must be a wall-based exercise 
+        (e.g. bouldering, ARC, 4x4s, etc.).
 
     Return a JSON object with ONLY a "weekly_schedule" array containing {sessions_per_week} days.
     Each day should have:
