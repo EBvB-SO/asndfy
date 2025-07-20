@@ -41,6 +41,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger("ascendify")
 
+# === Hook root handlers into Uvicorn’s loggers ===
+root_logger    = logging.getLogger()
+uvicorn_error  = logging.getLogger("uvicorn.error")
+uvicorn_access = logging.getLogger("uvicorn.access")
+
+# Attach every handler the root logger has, into uvicorn.error & uvicorn.access
+for handler in root_logger.handlers:
+    uvicorn_error.addHandler(handler)
+    uvicorn_access.addHandler(handler)
+
+# Make sure both Uvicorn loggers show DEBUG+ messages
+uvicorn_error.setLevel(logging.DEBUG)
+uvicorn_access.setLevel(logging.DEBUG)
+
 # --- Create FastAPI app ---
 app = FastAPI(
     title       = "AscendifyAI API",
@@ -169,5 +183,7 @@ if __name__ == "__main__":
         "app.main:app",
         host="0.0.0.0",  # Changed from 127.0.0.1 to 0.0.0.0
         port=int(os.getenv("PORT", 8001)),
-        reload=True
+        reload=True,
+        log_config=None,    
+        log_level="debug",
     )

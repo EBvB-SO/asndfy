@@ -901,6 +901,88 @@ Return only JSON with a top‐level structure containing route_overview, trainin
                 phase_type=phase['type'],
                 phase_weeks=phase['weeks']
             )
+
+            # —— Enforce high‐intensity exercises first in each session —— #
+            DAY_INTENSITY_ORDER = {
+                # === Highest-intensity “strength/power” ===
+                "Campus Board Exercises":               0,
+                "Campus Board Exercises (Power)":       0,
+                "Campus Board Exercises (Strength)":    0,
+                "Explosive Pull-Ups":                   0,
+                "Fingerboard Max Hangs":                0,
+                "Fingerboard Max Hangs (Crimps)":       0,  
+                "Fingerboard Max Hangs (Pockets)":      0,      
+                "Fingerboard Max Hangs (Slopers)":      0,    
+                "Fingerboard Max Hangs (Drag)":         0, 
+                "Campus Bouldering":                    2,   
+                "Max Boulder Sessions":                 4,
+                "Board Session":                        4,
+                "Boulder Pyramids":                     4,
+                "Weighted Pull-Ups":                    4,
+                "One-Arm Lock-Offs":                    4,
+                "Boulder Intervals":                    6,
+
+                # === Anaerobic-capacity ===
+                "Long Boulder Circuits":                8,
+                "Boulder Triples":                      8,
+                "Linked Bouldering Circuits":           8,
+                "Campus Laddering":                     8,
+                "Fingerboard Repeater Blocks":          8,
+                "Multiple Set Boulder Circuits":        8,
+                "Density Hangs":                        8,
+ 
+                # === Anaerobic-power ===
+                "Short Boulder Repeats":                8,
+                "Broken Circuits":                      8,
+                "Max Intensity Redpoints":              8,
+
+                # === Aerobic-power ===
+                "Boulder 4x4s":                         10,
+                "3x3 Bouldering Circuits":              10,  
+                "Intensive Foot-On Campus":             10,
+                "30-Move Circuits":                     10,
+                "On-The-Minute Bouldering":             10,
+
+                # === Aerobic-power ===
+                "Volume Bouldering":                    12,
+                "Free Bouldering":                      14,
+
+                # === Aerobic-capacity / ARC ===
+                "Continuous Low-Intensity Climbing":    18,
+                "Mixed Intensity Laps":                 18,
+                "X-On, X-Off Intervals":                18,
+                "Route 4x4s":                           18,
+                "Linked Laps":                          18,
+                "Low Intensity Fingerboarding":         18,
+                "Foot-On Campus Endurance":             18,
+
+                # === Core work ===
+                "Front Lever Progressions":             22,
+                "Hanging Knee Raises":                  22,
+                "Window Wipers":                        22,
+                "Plank":                                22,
+                "Hanging Leg Raises":                   22,
+
+                # === Technique / skill drills ===
+                "Silent Feet Drills":                   26,
+                "Flagging Practice":                    26,
+                "High-Step Drills":                     26,
+                "Slow Climbing":                        26,
+                "Dynamic Movement Practice":            26,
+                "Rest Position Training":               26,
+                "Open-Hand Grip Practice":              26,
+                "Cross-Through Drills":                 26,
+
+                # === Mobility ===
+                "Flexibility and Mobility Circuit":     30,
+                "Dynamic Hip Mobility":                 30,
+                "Shoulder Mobility Flow":               30,
+                "Ankle and Foot Mobility":              30,        
+            }
+            def sort_focus(focus_str):
+                parts = [p.strip() for p in focus_str.split("+")]
+                parts.sort(key=lambda p: DAY_INTENSITY_ORDER.get(p, 99))
+                return " + ".join(parts)
             
             # Prepare hang‑dedupe helpers once per phase:
             fingerboard_set = {
@@ -966,8 +1048,6 @@ Return only JSON with a top‐level structure containing route_overview, trainin
                         phase_schedule, 
                         [ex['name'] for ex in phase_exercises]
                     )
-                    
-                    # Post-process to separate exercises if needed
                     if "weekly_schedule" in fixed_schedule:
                         for day in fixed_schedule["weekly_schedule"]:
                             if "+" in day.get("focus", ""):
@@ -1004,98 +1084,93 @@ Return only JSON with a top‐level structure containing route_overview, trainin
 
                         day["focus"] = " + ".join(parts)
 
-                    # —— Enforce high‐intensity exercises first in each session —— #
-                    DAY_INTENSITY_ORDER = {
-                        # === Highest-intensity “strength/power” ===
-                        "Campus Board Exercises":               0,
-                        "Campus Board Exercises (Power)":       0,
-                        "Campus Board Exercises (Strength)":    0,
-                        "Explosive Pull-Ups":                   0,
-                        "Fingerboard Max Hangs":                0,
-                        "Fingerboard Max Hangs (Crimps)":       0,  
-                        "Fingerboard Max Hangs (Pockets)":      0,      
-                        "Fingerboard Max Hangs (Slopers)":      0,    
-                        "Fingerboard Max Hangs (Drag)":         0, 
-                        "Campus Bouldering":                    2,   
-                        "Max Boulder Sessions":                 4,
-                        "Board Session":                        4,
-                        "Boulder Pyramids":                     4,
-                        "Weighted Pull-Ups":                    4,
-                        "One-Arm Lock-Offs":                    4,
-                        "Boulder Intervals":                    6,
-
-                        # === Anaerobic-capacity ===
-                        "Long Boulder Circuits":                8,
-                        "Boulder Triples":                      8,
-                        "Linked Bouldering Circuits":           8,
-                        "Campus Laddering":                     8,
-                        "Fingerboard Repeater Blocks":          8,
-                        "Multiple Set Boulder Circuits":        8,
-                        "Density Hangs":                        8,
- 
-                        # === Anaerobic-power ===
-                        "Short Boulder Repeats":                8,
-                        "Broken Circuits":                      8,
-                        "Max Intensity Redpoints":              8,
-
-                        # === Aerobic-power ===
-                        "Boulder 4x4s":                         10,
-                        "3x3 Bouldering Circuits":              10,  
-                        "Intensive Foot-On Campus":             10,
-                        "30-Move Circuits":                     10,
-                        "On-The-Minute Bouldering":             10,
-
-                        # === Aerobic-power ===
-                        "Volume Bouldering":                    12,
-                        "Free Bouldering":                      14,
-
-                        # === Aerobic-capacity / ARC ===
-                        "Continuous Low-Intensity Climbing":    18,
-                        "Mixed Intensity Laps":                 18,
-                        "X-On, X-Off Intervals":                18,
-                        "Route 4x4s":                           18,
-                        "Linked Laps":                          18,
-                        "Low Intensity Fingerboarding":         18,
-                        "Foot-On Campus Endurance":             18,
-
-                        # === Core work ===
-                        "Front Lever Progressions":             22,
-                        "Hanging Knee Raises":                  22,
-                        "Window Wipers":                        22,
-                        "Plank":                                22,
-                        "Hanging Leg Raises":                   22,
-
-                        # === Technique / skill drills ===
-                        "Silent Feet Drills":                   26,
-                        "Flagging Practice":                    26,
-                        "High-Step Drills":                     26,
-                        "Slow Climbing":                        26,
-                        "Dynamic Movement Practice":            26,
-                        "Rest Position Training":               26,
-                        "Open-Hand Grip Practice":              26,
-                        "Cross-Through Drills":                 26,
-
-                        # === Mobility ===
-                        "Flexibility and Mobility Circuit":     30,
-                        "Dynamic Hip Mobility":                 30,
-                        "Shoulder Mobility Flow":               30,
-                        "Ankle and Foot Mobility":              30,
-                    }
-
-                    def sort_focus(focus_str):
-                        parts = [p.strip() for p in focus_str.split("+")]
-                        parts.sort(key=lambda p: DAY_INTENSITY_ORDER.get(p, 99))
-                        return " + ".join(parts)
-
                     for day in fixed_schedule["weekly_schedule"]:
                         day["focus"] = sort_focus(day["focus"])
                     # — end intensity sort — #
                     
+                    # —— Prevent two high‑intensity days in a row —— #
+                    DAY_ORDER = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+                    day_to_idx = {d:i for i,d in enumerate(DAY_ORDER)}
+                    intensity_map = { name: DAY_INTENSITY_ORDER.get(name, 99) for name in DAY_INTENSITY_ORDER }
+                    sched = fixed_schedule["weekly_schedule"]
+
+                    def session_intensity(focus_str):
+                        parts = [p.strip() for p in focus_str.split("+")]
+                        return min(intensity_map.get(p, 99) for p in parts)
+
+                    HIGH_INT_THRESHOLD = 4
+                    # walk through scheduled days in calendar order
+                    for i in range(len(sched)-1):
+                        today, tomorrow = sched[i], sched[i+1]
+                        idx_t, idx_tm = day_to_idx[today["day"]], day_to_idx[tomorrow["day"]]
+                        if idx_tm - idx_t == 1:  # truly consecutive days
+                            if (session_intensity(today["focus"]) <= HIGH_INT_THRESHOLD and
+                                session_intensity(tomorrow["focus"]) <= HIGH_INT_THRESHOLD):
+                                # swap tomorrow with next lower‑intensity day
+                                for j in range(i+2, len(sched)):
+                                    if session_intensity(sched[j]["focus"]) > HIGH_INT_THRESHOLD:
+                                        sched[i+1], sched[j] = sched[j], sched[i+1]
+                                        break
+
+                    # 3) Enforce minimum endurance in Power‑Endurance phase
+                    aero_cap = {
+                        "Continuous Low-Intensity Climbing", "Mixed Intensity Laps",
+                        "X-On, X-Off Intervals", "Route 4x4s", "Linked Laps"
+                    }
+                    aero_pow = {
+                        "Boulder 4x4s", "30-Move Circuits",
+                        "On-The-Minute Bouldering", "3x3 Bouldering Circuits"
+                    }
+
+                    needs_endurance = (
+                        route_features["is_endurance"]
+                        or "endurance" in plan_data.perceived_weaknesses.lower()
+                    )
+                    if phase["name"].lower().startswith("power-endurance development") and needs_endurance:
+                        cap_count = sum(any(ex in d["focus"] for ex in aero_cap) for d in sched)
+                        pow_count = sum(any(ex in d["focus"] for ex in aero_pow) for d in sched)
+
+                        # 3a) gather true candidates from what the LLM actually selected this phase
+                        all_cap_candidates = [
+                            ex["name"] for ex in phase_exercises if ex["name"] in aero_cap
+                        ]
+                        all_pow_candidates = [
+                            ex["name"] for ex in phase_exercises if ex["name"] in aero_pow
+                        ]
+
+                        # 3b) fallback into your replacement_candidates, then None
+                        top_cap = (all_cap_candidates
+                                or [ex for ex in replacement_candidates if ex in aero_cap]
+                                or [None])[0]
+                        top_pow = (all_pow_candidates
+                                or [ex for ex in replacement_candidates if ex in aero_pow]
+                                or [None])[0]
+
+                        # 3c) do the swap only if we actually found something
+                        if cap_count < 2 and top_cap:
+                            sched[-1]["focus"] = top_cap
+                        if pow_count < 1 and top_pow:
+                            sched[-2]["focus"] = top_pow
+
+                        # 3d) re‑sort and re‑run the no‑back‑to‑back rule
+                        for day in sched:
+                            day["focus"] = sort_focus(day["focus"])
+                        for i in range(len(sched) - 1):
+                            today, tomorrow = sched[i], sched[i+1]
+                            idx_t, idx_tm = day_to_idx[today["day"]], day_to_idx[tomorrow["day"]]
+                            if idx_tm - idx_t == 1 and \
+                            session_intensity(today["focus"]) <= HIGH_INT_THRESHOLD and \
+                            session_intensity(tomorrow["focus"]) <= HIGH_INT_THRESHOLD:
+                                for j in range(i+2, len(sched)):
+                                    if session_intensity(sched[j]["focus"]) > HIGH_INT_THRESHOLD:
+                                        sched[i+1], sched[j] = sched[j], sched[i+1]
+                                        break
+
                     # Add to complete plan
                     complete_plan["phases"].append({
                         "phase_name": phase['name'],
                         "description": phase['description'],
-                        "weekly_schedule": fixed_schedule.get("weekly_schedule", [])
+                        "weekly_schedule": sched
                     })     
             
                     if on_progress:
@@ -1112,13 +1187,6 @@ Return only JSON with a top‐level structure containing route_overview, trainin
                 except Exception as e:
                     logger.error(f"Error generating phase {idx+1}: {e}")
                     raise
-        
-        # Ensure days are in correct order
-        DAY_ORDER = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
-        for phase in complete_plan["phases"]:
-            phase["weekly_schedule"].sort(
-                key=lambda day: DAY_ORDER.index(day["day"])
-            )
 
         return complete_plan
 

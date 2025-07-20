@@ -74,6 +74,7 @@ async def generate_full_plan_async(
 ):
     """Start plan generation and return immediately with a task ID"""
     logger.info(f"Received full plan request from {current_user}")
+    logger.info(f"Request data: {request.dict()}")
     logger.info(f"Weeks: {request.weeks_to_train}, Sessions: {request.sessions_per_week}")
     
     task_id = str(uuid.uuid4())

@@ -41,6 +41,8 @@ def generate_plan_background(
     
     try:
         logger.info(f"[{task_id}] starting background plan generation for {user_email}")
+        logger.info(f"[{task_id}] Starting background generation")
+        logger.info(f"[{task_id}] Request data: {request.dict()}")
         
         # Generate the plan
         plan = service.generate_full_plan(request, on_progress=update_progress)
@@ -57,6 +59,7 @@ def generate_plan_background(
         )
         
     except Exception as e:
+        logger.error(f"[{task_id}] Background task failed: {str(e)}", exc_info=True)
         logger.error(f"[{task_id}] failed to generate plan: {e}", exc_info=True)
         loop.run_until_complete(
             redis_client.set(
