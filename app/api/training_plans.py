@@ -26,6 +26,14 @@ def test_endpoint():
     logger.info("Test endpoint hit!")
     return {"status": "ok", "message": "Backend is reachable"}
 
+@router.get("/test_background")
+async def test_background():
+    try:
+        from app.api._background import generate_plan_background
+        return {"status": "import successful"}
+    except Exception as e:
+        return {"status": "import failed", "error": str(e)}
+
 # Initialize the plan generator service
 plan_generator = PlanGeneratorService()
 
@@ -85,6 +93,19 @@ async def generate_full_plan_async(
         json.dumps({"status": "processing", "progress": 0}),
         ex=600  # expire in 10 minutes
     )
+
+    try:
+        # Test that we can create the service
+        test_service = PlanGeneratorService()
+        logger.info(f"PlanGeneratorService created successfully")
+    except Exception as e:
+        logger.error(f"Failed to create PlanGeneratorService: {e}")
+        await redis_client.set(
+            f"plan_generation:{task_id}",
+            json.dumps({"status": "error", "message": str(e)}),
+            ex=600
+        )
+        return {"task_id": task_id, "error": "Service initialization failed"}
 
     # Queue the actual generation in the background
     background_tasks.add_task(
