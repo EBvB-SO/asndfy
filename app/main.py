@@ -30,30 +30,33 @@ from app.api.sessions             import router as sessions_router
 from app.api.exercise_tracking    import router as exercise_tracking_router
 from app.api.exercise_history     import router as history_router
 
+logger = logging.getLogger("uvicorn.error")
+logger.setLevel(logging.INFO) 
+
 # --- Configure logging ---
-logging.basicConfig(
-    level    = logging.DEBUG,
-    format   = "%(asctime)s %(name)s %(levelname)s %(message)s",
-    handlers = [
-        logging.StreamHandler(),
-        logging.FileHandler("app.log", mode="a")
-    ]
-)
-logger = logging.getLogger("ascendify")
+# logging.basicConfig(
+    # level    = logging.DEBUG,
+    # format   = "%(asctime)s %(name)s %(levelname)s %(message)s",
+    # handlers = [
+        # logging.StreamHandler(),
+        # logging.FileHandler("app.log", mode="a")
+    # ]
+# )
+# logger = logging.getLogger("ascendify")
 
 # === Hook root handlers into Uvicorn’s loggers ===
-root_logger    = logging.getLogger()
-uvicorn_error  = logging.getLogger("uvicorn.error")
-uvicorn_access = logging.getLogger("uvicorn.access")
+# root_logger    = logging.getLogger()
+# uvicorn_error  = logging.getLogger("uvicorn.error")
+# uvicorn_access = logging.getLogger("uvicorn.access")
 
 # Attach every handler the root logger has, into uvicorn.error & uvicorn.access
-for handler in root_logger.handlers:
-    uvicorn_error.addHandler(handler)
-    uvicorn_access.addHandler(handler)
+# for handler in root_logger.handlers:
+    # uvicorn_error.addHandler(handler)
+    # uvicorn_access.addHandler(handler)
 
 # Make sure both Uvicorn loggers show DEBUG+ messages
-uvicorn_error.setLevel(logging.DEBUG)
-uvicorn_access.setLevel(logging.DEBUG)
+# uvicorn_error.setLevel(logging.DEBUG)
+# uvicorn_access.setLevel(logging.DEBUG)
 
 # --- Create FastAPI app ---
 app = FastAPI(
@@ -174,16 +177,3 @@ async def root():
 @app.get("/health", tags=["Health"])
 async def health_check():
     return {"status": "healthy"}
-
-# --- Uvicorn entry point ---
-if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run(
-        "app.main:app",
-        host="0.0.0.0",  # Changed from 127.0.0.1 to 0.0.0.0
-        port=int(os.getenv("PORT", 8001)),
-        reload=True,
-        log_config=None,    
-        log_level="debug",
-    )

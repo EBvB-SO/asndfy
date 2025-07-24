@@ -18,6 +18,11 @@ def get_profile(
     current_user: str = Depends(get_current_user_email),
     db: Session = Depends(get_db)
 ):
+    logger.info(f"Profile request - URL email: '{email}', Token email: '{current_user}'")
+    # Normalize both to lowercase
+    if email.lower() != current_user.lower():
+        logger.error(f"Email mismatch: URL='{email}', Token='{current_user}'")
+        raise HTTPException(status_code=403, detail="Unauthorized to access this profile")
     """Get user profile by email."""
     # Verify the user is requesting their own profile
     if email != current_user:

@@ -1166,6 +1166,7 @@ Return only JSON with a top‐level structure containing route_overview, trainin
                                         sched[i+1], sched[j] = sched[j], sched[i+1]
                                         break
 
+
                     # Add to complete plan
                     complete_plan["phases"].append({
                         "phase_name": phase['name'],

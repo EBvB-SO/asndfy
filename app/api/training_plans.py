@@ -44,6 +44,10 @@ def generate_plan_preview(
     current_user: str = Depends(get_current_user_email)  # require valid JWT
 ):
     """Generate a lightweight preview with route analysis and training approach."""
+    print(f"PREVIEW HIT: {data.route}", flush=True)
+    import sys
+    sys.stdout.flush()
+    
     logger.info(f"Received preview request from {current_user}")
     logger.info(f"Route: {data.route}, Grade: {data.grade}, Crag: {data.crag}")
     try:
