@@ -388,7 +388,7 @@ def get_project_detail(
 
     # Verify ownership
     user = db.query(User).filter(User.email == current_user).first()
-    if not user or project.user_id != user.id:
+    if not user or str(project.user_id) != str(user.id):
         raise HTTPException(status_code=403, detail="Unauthorized")
 
     # Convert to response model
