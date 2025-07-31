@@ -370,83 +370,121 @@ def delete_project_log(
 # --- New endpoints to match Swift client calls ---
 
 @router.get("/debug/auth-test")
-def test_auth(
-    current_user: str = Depends(get_current_user_email)
+def debug_auth_test(
+    current_user: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db)
 ):
-    """Test endpoint to verify authentication is working."""
-    logger.info(f"Auth test - current user: {current_user}")
-    return {"current_user": current_user, "status": "authenticated"}
+    """Debug endpoint to test authentication and list user's projects"""
+    logger.info(f"🔍 Auth debug - current user: {current_user}")
+    
+    # Get user from database
+    user = db.query(User).filter(User.email == current_user).first()
+    
+    # Get user's projects
+    projects = db.query(DBProject).filter(DBProject.user_id == (user.id if user else None)).all()
+    
+    return {
+        "success": True,
+        "current_user_email": current_user,
+        "user_found_in_db": user is not None,
+        "user_id": user.id if user else None,
+        "user_projects_count": len(projects),
+        "project_ids": [p.id for p in projects] if projects else [],
+        "message": "Authentication working correctly"
+    }
+
+
+@router.get("/debug/token-info")
+def debug_token_info(
+    current_user: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db)
+):
+    """Debug endpoint to check token contents."""
+    # Find user in database
+    user = db.query(User).filter(User.email == current_user).first()
+    
+    return {
+        "jwt_email": current_user,
+        "jwt_email_length": len(current_user),
+        "jwt_email_bytes": current_user.encode(),
+        "db_user_found": user is not None,
+        "db_user_email": user.email if user else None,
+        "db_user_email_length": len(user.email) if user else None,
+        "db_user_email_bytes": user.email.encode() if user else None,
+        "emails_match": user.email.lower().strip() == current_user.lower().strip() if user else False
+    }
 
 @router.get("/detail/{project_id}", response_model=Project)
 def get_project_detail(
-    project_id: str,
-    db: Session = Depends(get_db),
-    current_user: str = Depends(get_current_user_email)
+   project_id: str,
+   db: Session = Depends(get_db),
+   current_user: str = Depends(get_current_user_email)
 ):
-    """
-    Get a project (with logs) by its ID, without the email in the path.
-    """
-    try:
-        # normalize to lowercase so DB lookup always matches
-        project_id = project_id.lower()
-        
-        logger.info(f"=== PROJECT DETAIL REQUEST ===")
-        logger.info(f"Looking for project with ID: {project_id}")
-        logger.info(f"Current user: {current_user}")
-        
-        # Get the project first
-        project = db.query(DBProject).filter(DBProject.id == project_id).first()
-        if not project:
-            logger.error(f"Project not found with ID: {project_id}")
-            raise HTTPException(status_code=404, detail="Project not found")
+   """
+   Get a project (with logs) by its ID, without the email in the path.
+   """
+   try:
+       # normalize to lowercase so DB lookup always matches
+       project_id = project_id.lower()
+       
+       logger.info(f"=== PROJECT DETAIL REQUEST ===")
+       logger.info(f"Looking for project with ID: {project_id}")
+       logger.info(f"Current user: {current_user}")
+       
+       # Get the project first
+       project = db.query(DBProject).filter(DBProject.id == project_id).first()
+       if not project:
+           logger.error(f"Project not found with ID: {project_id}")
+           raise HTTPException(status_code=404, detail="Project not found")
 
-        logger.info(f"Found project: {project.route_name}, user_id: {project.user_id}")
+       logger.info(f"Found project: {project.route_name}, user_id: {project.user_id}")
 
-        # Get the user who owns this project
-        user = db.query(User).filter(User.id == project.user_id).first()
-        if not user:
-            logger.error(f"Project owner not found with user_id: {project.user_id}")
-            raise HTTPException(status_code=404, detail="Project owner not found")
+       # Get the user who owns this project
+       user = db.query(User).filter(User.id == project.user_id).first()
+       if not user:
+           logger.error(f"Project owner not found with user_id: {project.user_id}")
+           raise HTTPException(status_code=404, detail="Project owner not found")
 
-        logger.info(f"Project owner email: {user.email}")
-        
-        # Verify ownership - compare emails (both normalized to lowercase)
-        if user.email.lower() != current_user.lower():
-            logger.warning(f"Authorization failed: project owner email '{user.email}' != current user '{current_user}'")
-            raise HTTPException(status_code=403, detail="Unauthorized")
+       logger.info(f"Project owner email: '{user.email}'")
+       logger.info(f"Current user email: '{current_user}'")
+       
+       # Simple email comparison
+       if user.email.lower() != current_user.lower():
+           logger.warning(f"Authorization failed: project owner email '{user.email}' != current user '{current_user}'")
+           raise HTTPException(status_code=403, detail="Unauthorized")
 
-        logger.info("Authorization successful - returning project details")
+       logger.info("✅ Authorization successful - returning project details")
 
-        # Convert to response model
-        return Project(
-            id=project.id,
-            user_id=project.user_id,
-            route_name=project.route_name,
-            grade=project.grade,
-            crag=project.crag,
-            description=project.description or "",
-            route_angle=project.route_angle,
-            route_length=project.route_length,
-            hold_type=project.hold_type,
-            is_completed=project.is_completed,
-            completion_date=project.completion_date.isoformat() if project.completion_date else None,
-            created_at=project.created_at.isoformat(),
-            updated_at=project.updated_at.isoformat(),
-            logs=[ProjectLog(
-                id=log.id,
-                project_id=log.project_id,
-                date=log.date.isoformat(),
-                content=log.content,
-                mood=log.mood,
-                created_at=log.created_at.isoformat()
-            ) for log in project.logs]
-        )
-    except HTTPException:
-        # Re-raise HTTP exceptions
-        raise
-    except Exception as e:
-        logger.error(f"Unexpected error in get_project_detail: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error")
+       # Convert to response model
+       return Project(
+           id=project.id,
+           user_id=project.user_id,
+           route_name=project.route_name,
+           grade=project.grade,
+           crag=project.crag,
+           description=project.description or "",
+           route_angle=project.route_angle,
+           route_length=project.route_length,
+           hold_type=project.hold_type,
+           is_completed=project.is_completed,
+           completion_date=project.completion_date.isoformat() if project.completion_date else None,
+           created_at=project.created_at.isoformat(),
+           updated_at=project.updated_at.isoformat(),
+           logs=[ProjectLog(
+               id=log.id,
+               project_id=log.project_id,
+               date=log.date.isoformat(),
+               content=log.content,
+               mood=log.mood,
+               created_at=log.created_at.isoformat()
+           ) for log in project.logs]
+       )
+   except HTTPException:
+       # Re-raise HTTP exceptions
+       raise
+   except Exception as e:
+       logger.error(f"Unexpected error in get_project_detail: {e}", exc_info=True)
+       raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.delete("/logs/{log_id}")
@@ -487,6 +525,13 @@ def delete_log_entry(
         raise HTTPException(status_code=404, detail="Project owner not found")
 
     logger.info(f"Project owner email: {user.email}")
+
+    # DEBUG LOGGING - ADD THIS
+    logger.info(f"🔍 AUTH DEBUG:")
+    logger.info(f"🔍 JWT email (current_user): '{current_user}'")
+    logger.info(f"🔍 Project owner email: '{user.email}'")
+    logger.info(f"🔍 Project user_id: {project.user_id}")
+    logger.info(f"🔍 Found user id: {user.id}")
 
     # Verify ownership - compare emails (both normalized to lowercase)
     if user.email.lower() != current_user.lower():
