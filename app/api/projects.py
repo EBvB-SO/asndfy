@@ -422,41 +422,69 @@ def get_project_detail(
 ):
    """
    Get a project (with logs) by its ID, without the email in the path.
+   ENHANCED DEBUG VERSION
    """
    try:
        # normalize to lowercase so DB lookup always matches
        project_id = project_id.lower()
        
-       logger.info(f"=== PROJECT DETAIL REQUEST ===")
+       logger.info(f"=== PROJECT DETAIL REQUEST (ENHANCED DEBUG) ===")
        logger.info(f"Looking for project with ID: {project_id}")
-       logger.info(f"Current user: {current_user}")
+       logger.info(f"Current user from JWT: '{current_user}'")
+       logger.info(f"Current user type: {type(current_user)}")
        
        # Get the project first
        project = db.query(DBProject).filter(DBProject.id == project_id).first()
        if not project:
-           logger.error(f"Project not found with ID: {project_id}")
+           logger.error(f"❌ Project not found with ID: {project_id}")
            raise HTTPException(status_code=404, detail="Project not found")
 
-       logger.info(f"Found project: {project.route_name}, user_id: {project.user_id}")
+       logger.info(f"✅ Found project: {project.route_name}, user_id: {project.user_id}")
 
        # Get the user who owns this project
        user = db.query(User).filter(User.id == project.user_id).first()
        if not user:
-           logger.error(f"Project owner not found with user_id: {project.user_id}")
+           logger.error(f"❌ Project owner not found with user_id: {project.user_id}")
            raise HTTPException(status_code=404, detail="Project owner not found")
 
-       logger.info(f"Project owner email: '{user.email}'")
-       logger.info(f"Current user email: '{current_user}'")
+       logger.info(f"✅ Project owner found: email='{user.email}'")
        
-       # Simple email comparison
-       if user.email.lower() != current_user.lower():
-           logger.warning(f"Authorization failed: project owner email '{user.email}' != current user '{current_user}'")
+       # DETAILED EMAIL COMPARISON DEBUG
+       user_email_clean = user.email.strip().lower()
+       current_user_clean = current_user.strip().lower()
+       
+       logger.info(f"🔍 DETAILED EMAIL COMPARISON:")
+       logger.info(f"  📧 Project owner email: '{user.email}' (len={len(user.email)})")
+       logger.info(f"  🎫 JWT current user:     '{current_user}' (len={len(current_user)})")
+       logger.info(f"  🧹 Cleaned owner:       '{user_email_clean}' (len={len(user_email_clean)})")
+       logger.info(f"  🧹 Cleaned current:     '{current_user_clean}' (len={len(current_user_clean)})")
+       logger.info(f"  ⚖️  Are they equal?      {user_email_clean == current_user_clean}")
+       
+       if user_email_clean != current_user_clean:
+           logger.error(f"❌ AUTHORIZATION FAILED:")
+           logger.error(f"   Owner: '{user_email_clean}'")
+           logger.error(f"   Current: '{current_user_clean}'")
+           
+           # Byte-by-byte comparison for debugging
+           owner_bytes = user_email_clean.encode('utf-8')
+           current_bytes = current_user_clean.encode('utf-8')
+           logger.error(f"   Owner bytes: {list(owner_bytes)}")
+           logger.error(f"   Current bytes: {list(current_bytes)}")
+           
+           # Character by character comparison
+           max_len = max(len(user_email_clean), len(current_user_clean))
+           for i in range(max_len):
+               owner_char = user_email_clean[i] if i < len(user_email_clean) else "END"
+               current_char = current_user_clean[i] if i < len(current_user_clean) else "END"
+               match = "✓" if owner_char == current_char else "✗"
+               logger.error(f"     [{i:2d}]: '{owner_char}' vs '{current_char}' {match}")
+           
            raise HTTPException(status_code=403, detail="Unauthorized")
 
-       logger.info("✅ Authorization successful - returning project details")
+       logger.info("✅ EMAIL MATCH - Authorization successful!")
 
        # Convert to response model
-       return Project(
+       result_project = Project(
            id=project.id,
            user_id=project.user_id,
            route_name=project.route_name,
@@ -479,13 +507,16 @@ def get_project_detail(
                created_at=log.created_at.isoformat()
            ) for log in project.logs]
        )
+       
+       logger.info("✅ Returning project details successfully")
+       return result_project
+       
    except HTTPException:
        # Re-raise HTTP exceptions
        raise
    except Exception as e:
-       logger.error(f"Unexpected error in get_project_detail: {e}", exc_info=True)
+       logger.error(f"❌ Unexpected error in get_project_detail: {e}", exc_info=True)
        raise HTTPException(status_code=500, detail="Internal server error")
-
 
 @router.delete("/logs/{log_id}")
 def delete_log_entry(
