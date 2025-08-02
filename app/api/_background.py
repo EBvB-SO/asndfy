@@ -64,14 +64,6 @@ def generate_plan_background(
         def update_progress(current: int, total: int):
             pct = int(current / total * 100)
             logger.info(f"[{task_id}] progress: {pct}% ({current}/{total})")
-           
-            loop.run_until_complete(
-                redis_client.set(
-                    f"plan_generation:{task_id}",
-                    json.dumps({"status": "processing", "progress": pct}),
-                    ex=600
-                )
-            )
        
         logger.info(f"[{task_id}] starting background plan generation for {user_email}")
         logger.info(f"[{task_id}] Request data: {request.dict()}")
