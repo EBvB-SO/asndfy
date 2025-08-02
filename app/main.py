@@ -153,13 +153,6 @@ async def startup_event():
     }
     logger.info(f"📋 Env configuration: {env_ok}")
 
-    # 2) Database connection check (but NO automatic migrations)
-    if os.getenv("DATABASE_URL"):
-        logger.info("✅ Database URL configured")
-        logger.info("ℹ️  To apply migrations manually, run: alembic upgrade head")
-    else:
-        logger.warning("⚠️  DATABASE_URL not set")
-
     # 3) Check Redis connectivity with timeout
     try:
         import asyncio
@@ -172,7 +165,7 @@ async def startup_event():
     except Exception as e:
         logger.warning(f"⚠️  Redis connection failed: {e} - continuing without Redis")
 
-    # 3) Check OpenAI key
+    # 4) Check OpenAI key
     if not os.getenv("OPENAI_API_KEY"):
         logger.warning("⚠️  OPENAI_API_KEY not set → plan generation will fail")
     else:

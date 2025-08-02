@@ -1,4 +1,4 @@
-# Enhanced app/core/dependencies.py with better logging
+# app/core/dependencies.py
 
 import logging
 from fastapi import Depends, HTTPException, status
@@ -32,24 +32,32 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) 
 def get_current_user_email(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
     """FastAPI dependency: return the `email` claim from a Bearer token."""
     try:
-        logger.debug(f"Getting user email from token: {credentials.credentials[:20]}...")
+        logger.debug(f"🔍 AUTH DEPENDENCY: Starting token validation")
+        logger.debug(f"🔍 AUTH DEPENDENCY: Token present: {credentials.credentials[:20] if credentials else 'None'}...")
+        
         payload = decode_token(credentials.credentials)
+        logger.debug(f"🔍 AUTH DEPENDENCY: Token decoded successfully")
+        logger.debug(f"🔍 AUTH DEPENDENCY: Payload keys: {list(payload.keys())}")
+        
         email = payload.get("email")
         
         if not email:
-            logger.error("Token payload missing email field")
+            logger.error("❌ AUTH DEPENDENCY: Token payload missing email field")
+            logger.error(f"❌ AUTH DEPENDENCY: Full payload: {payload}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token payload - missing email",
             )
         
-        logger.debug(f"Extracted email from token: {email}")
+        logger.debug(f"✅ AUTH DEPENDENCY: Successfully extracted email: '{email}'")
         return email
         
-    except HTTPException:
+    except HTTPException as http_ex:
+        logger.error(f"❌ AUTH DEPENDENCY: HTTP Exception: {http_ex.status_code} - {http_ex.detail}")
         raise
     except Exception as e:
-        logger.error(f"Error extracting email from token: {e}")
+        logger.error(f"❌ AUTH DEPENDENCY: Unexpected error: {e}")
+        logger.error(f"❌ AUTH DEPENDENCY: Credentials: {credentials}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
