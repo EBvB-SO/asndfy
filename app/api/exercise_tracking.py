@@ -10,13 +10,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.models.exercise import (
-    ExerciseTracking,          # Pydantic model for output
-    ExerciseTrackingCreate,    # Pydantic model for create payload
-    ExerciseTrackingUpdate     # Pydantic model for update payload, if you use it
+    ExerciseTracking,          
+    ExerciseTrackingCreate,    
+    ExerciseTrackingUpdate     
 )
 from app.core.dependencies import get_current_user_email
 from app.core.database import get_db
-from app.db.models import User, ExerciseTracking as DBExerciseTracking
+from app.db.models import User, ExerciseTracking as DBExerciseTracking, TrainingPlan
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,76 @@ router = APIRouter(
     tags=["Exercise Tracking"],
 )
 
+@router.post("/exercises")
+async def add_or_update_exercise(
+    email: str,
+    planId: str,
+    tracking: ExerciseTrackingCreate,
+    current_user: str = Depends(get_current_user_email),
+    db: Session   = Depends(get_db),
+):
+    if email != current_user:
+        raise HTTPException(403, "Unauthorized")
+
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(404, "User not found")
+
+    planId = planId.lower()
+
+    try:
+        # CHECK IF PLAN EXISTS - if not, create a minimal one
+        existing_plan = db.query(TrainingPlan).filter(
+            TrainingPlan.id == planId,
+            TrainingPlan.user_id == user.id
+        ).first()
+        
+        if not existing_plan:
+            logger.warning(f"Plan {planId} not found, creating minimal plan for exercise tracking")
+            # Create a minimal plan to satisfy foreign key constraint
+            minimal_plan = TrainingPlan(
+                id=planId,
+                user_id=user.id,
+                route_name="Unknown Route",
+                grade="Unknown Grade",
+                route_overview="Auto-created for exercise tracking",
+                training_overview="This plan was auto-created to allow exercise tracking."
+            )
+            db.add(minimal_plan)
+            db.flush()  # Ensure the plan is created before continuing
+
+        rec_id = (tracking.id or str(uuid.uuid4())).lower()
+        existing = db.query(DBExerciseTracking).filter(
+            DBExerciseTracking.id      == rec_id,
+            DBExerciseTracking.user_id == user.id
+        ).first()
+
+        if existing:
+            existing.notes      = tracking.notes
+            existing.date       = tracking.date
+            existing.updated_at = datetime.utcnow()
+        else:
+            new_record = DBExerciseTracking(
+                id          = rec_id,
+                user_id     = user.id,
+                plan_id     = planId,
+                session_id  = tracking.session_id,
+                exercise_id = tracking.exercise_id,
+                date        = tracking.date,
+                notes       = tracking.notes
+            )
+            db.add(new_record)
+
+        db.commit()
+        return {"success": True, "message": "Exercise tracking saved"}
+
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.exception("Failed saving exercise for user %s", email)
+        raise HTTPException(
+            status_code=500,
+            detail="Could not save exercise, please try again later."
+        )
 
 @router.get("/exercises", response_model=List[ExerciseTracking])
 async def get_exercises(
@@ -63,61 +133,6 @@ async def get_exercises(
         )
         for rec in records
     ]
-
-
-@router.post("/exercises")
-async def add_or_update_exercise(
-    email: str,
-    planId: str,
-    tracking: ExerciseTrackingCreate,
-    current_user: str = Depends(get_current_user_email),
-    db: Session   = Depends(get_db),
-):
-    if email != current_user:
-        raise HTTPException(403, "Unauthorized")
-
-    user = db.query(User).filter(User.email == email).first()
-    if not user:
-        raise HTTPException(404, "User not found")
-
-    # ←—— Insert planId normalization here
-    planId = planId.lower()
-
-    try:
-        rec_id = (tracking.id or str(uuid.uuid4())).lower()
-        existing = db.query(DBExerciseTracking).filter(
-            DBExerciseTracking.id      == rec_id,
-            DBExerciseTracking.user_id == user.id
-        ).first()
-
-        if existing:
-            existing.notes      = tracking.notes
-            existing.date       = tracking.date
-            existing.updated_at = datetime.utcnow()
-        else:
-            new_record = DBExerciseTracking(
-                id          = rec_id,
-                user_id     = user.id,
-                plan_id     = planId,               # now uses the normalized value
-                session_id  = tracking.session_id,
-                exercise_id = tracking.exercise_id,
-                date        = tracking.date,
-                notes       = tracking.notes
-            )
-            db.add(new_record)
-
-        db.commit()
-        return {"success": True, "message": "Exercise tracking saved"}
-
-    except SQLAlchemyError:
-        db.rollback()
-        logger.exception("Failed saving exercise for user %s", email)
-        raise HTTPException(
-            status_code=500,
-            detail="Could not save exercise, please try again later."
-        )
-
-
 
 @router.get("/exercises/{exercise_id}/history")
 async def get_exercise_history(

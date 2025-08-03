@@ -15,6 +15,7 @@ from app.db.models import (
     SessionTracking as DBSessionTracking,
     PlanPhase,
     PlanSession,
+    TrainingPlan,
 )
 from app.models.session import SessionTracking, SessionTrackingUpdateBody
 from app.core.dependencies import get_current_user_email
@@ -155,6 +156,8 @@ async def initialize_sessions(
         raise HTTPException(status_code=404, detail="User not found")
 
     planId = planId.lower()
+    
+    # Check if sessions already exist
     already = (
         db.query(DBSessionTracking)
           .filter(
@@ -166,8 +169,27 @@ async def initialize_sessions(
     if already > 0:
         return {"success": True, "message": "Sessions already initialized"}
 
-    # Everything below will run inside the try/except
     try:
+        # ENSURE PLAN EXISTS - create minimal plan if needed
+        existing_plan = db.query(TrainingPlan).filter(
+            TrainingPlan.id == planId,
+            TrainingPlan.user_id == user.id
+        ).first()
+        
+        if not existing_plan:
+            logger.warning(f"Plan {planId} not found, creating minimal plan for session tracking")
+            minimal_plan = TrainingPlan(
+                id=planId,
+                user_id=user.id,
+                route_name="Local Training Plan",
+                grade="Unknown",
+                route_overview="Auto-created for session tracking",
+                training_overview="This plan was auto-created from local session data."
+            )
+            db.add(minimal_plan)
+            db.flush()
+
+        # Try to find phases, but if none exist, create basic sessions
         phases = (
             db.query(PlanPhase)
               .filter(PlanPhase.plan_id == planId)
@@ -176,43 +198,73 @@ async def initialize_sessions(
         )
 
         created: List[Dict[str, Any]] = []
-        for phase in phases:
-            match = re.search(r"weeks?\s+(\d+)-(\d+)", phase.phase_name.lower())
-            if not match:
-                continue
-            start, end = int(match.group(1)), int(match.group(2)) + 1
+        
+        if phases:
+            # Use existing logic with phases
+            for phase in phases:
+                match = re.search(r"weeks?\s+(\d+)-(\d+)", phase.phase_name.lower())
+                if not match:
+                    continue
+                start, end = int(match.group(1)), int(match.group(2)) + 1
 
-            templates = (
-                db.query(PlanSession)
-                  .filter(PlanSession.phase_id == phase.id)
-                  .order_by(PlanSession.session_order)
-                  .all()
-            )
+                templates = (
+                    db.query(PlanSession)
+                      .filter(PlanSession.phase_id == phase.id)
+                      .order_by(PlanSession.session_order)
+                      .all()
+                )
 
-            for week in range(start, end):
-                for tmpl in templates:
-                    new_s = DBSessionTracking(
-                        id             = str(uuid.uuid4()).lower(),
-                        user_id        = user.id,
-                        plan_id        = planId,
-                        week_number    = week,
-                        day_of_week    = tmpl.day,
-                        focus_name     = tmpl.focus,
-                        is_completed   = False,
-                        notes          = "",
-                    )
-                    db.add(new_s)
-                    created.append({
-                        "id":           new_s.id,
-                        "planId":       planId,
-                        "weekNumber":   week,
-                        "dayOfWeek":    tmpl.day,
-                        "focusName":    tmpl.focus,
-                        "isCompleted":  False,
-                        "notes":        ""
-                    })
+                for week in range(start, end):
+                    for tmpl in templates:
+                        new_s = DBSessionTracking(
+                            id             = str(uuid.uuid4()).lower(),
+                            user_id        = user.id,
+                            plan_id        = planId,
+                            week_number    = week,
+                            day_of_week    = tmpl.day,
+                            focus_name     = tmpl.focus,
+                            is_completed   = False,
+                            notes          = "",
+                        )
+                        db.add(new_s)
+                        created.append({
+                            "id":           new_s.id,
+                            "planId":       planId,
+                            "weekNumber":   week,
+                            "dayOfWeek":    tmpl.day,
+                            "focusName":    tmpl.focus,
+                            "isCompleted":  False,
+                            "notes":        ""
+                        })
+        else:
+            # No phases found - create basic weekly structure
+            logger.info(f"No phases found for plan {planId}, creating basic structure")
+            days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+            
+            for week in range(1, 9):  # 8 week default
+                for i, day in enumerate(days):
+                    if i < 3:  # Only 3 sessions per week
+                        new_s = DBSessionTracking(
+                            id             = str(uuid.uuid4()).lower(),
+                            user_id        = user.id,
+                            plan_id        = planId,
+                            week_number    = week,
+                            day_of_week    = day,
+                            focus_name     = f"Training Session {i+1}",
+                            is_completed   = False,
+                            notes          = "",
+                        )
+                        db.add(new_s)
+                        created.append({
+                            "id":           new_s.id,
+                            "planId":       planId,
+                            "weekNumber":   week,
+                            "dayOfWeek":    day,
+                            "focusName":    f"Training Session {i+1}",
+                            "isCompleted":  False,
+                            "notes":        ""
+                        })
 
-        # commit once everything is added
         db.commit()
         return {
             "success":  True,
