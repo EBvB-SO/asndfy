@@ -16,7 +16,7 @@ from app.models.exercise import (
 )
 from app.core.dependencies import get_current_user_email
 from app.core.database import get_db
-from app.db.models import User, ExerciseTracking as DBExerciseTracking, TrainingPlan
+from app.db.models import User, ExerciseTracking as DBExerciseTracking, TrainingPlan, SessionTracking as DBSessionTracking
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +63,29 @@ async def add_or_update_exercise(
             db.add(minimal_plan)
             db.flush()  # Ensure the plan is created before continuing
 
+        # CHECK IF SESSION EXISTS - if not, create a minimal one
+        session_id = tracking.session_id.lower()
+        existing_session = db.query(DBSessionTracking).filter(
+            DBSessionTracking.id == session_id,
+            DBSessionTracking.user_id == user.id
+        ).first()
+        
+        if not existing_session:
+            logger.warning(f"Session {session_id} not found, creating minimal session for exercise tracking")
+            # Create a minimal session to satisfy foreign key constraint
+            minimal_session = DBSessionTracking(
+                id=session_id,
+                user_id=user.id,
+                plan_id=planId,
+                week_number=1,
+                day_of_week="Monday",
+                focus_name="Auto-created session",
+                is_completed=False,
+                notes=""
+            )
+            db.add(minimal_session)
+            db.flush()  # Ensure the session is created before continuing
+
         rec_id = (tracking.id or str(uuid.uuid4())).lower()
         existing = db.query(DBExerciseTracking).filter(
             DBExerciseTracking.id      == rec_id,
@@ -78,7 +101,7 @@ async def add_or_update_exercise(
                 id          = rec_id,
                 user_id     = user.id,
                 plan_id     = planId,
-                session_id  = tracking.session_id,
+                session_id  = session_id,  # Use the lowercased version
                 exercise_id = tracking.exercise_id,
                 date        = tracking.date,
                 notes       = tracking.notes
@@ -215,4 +238,3 @@ async def delete_exercise(
             status_code=500,
             detail="Could not delete exercise, please try again later."
         )
-
