@@ -296,7 +296,81 @@ async def get_exercises(
         logger.error(f"❌ [EXERCISE API] Database error retrieving exercises for plan {planId}: {e}")
         raise HTTPException(500, "Database error occurred while retrieving exercises")
 
-# Add debugging endpoint
+@router.delete("/exercises/{exercise_id}")
+async def delete_exercise_tracking(
+    email: str,
+    planId: str,
+    exercise_id: str,
+    current_user: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db),
+):
+    """
+    Delete an exercise tracking record
+    """
+    logger.info(f"🗑️ [EXERCISE DELETE] Starting deletion for exercise: {exercise_id}")
+    
+    if email != current_user:
+        logger.warning(f"❌ [EXERCISE DELETE] Unauthorized access attempt")
+        raise HTTPException(403, "Unauthorized")
+
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        logger.error(f"❌ [EXERCISE DELETE] User not found: {email}")
+        raise HTTPException(404, "User not found")
+
+    # Ensure consistent lowercase IDs
+    planId = planId.lower()
+    exercise_id = exercise_id.lower()
+    
+    logger.info(f"🗑️ [EXERCISE DELETE] Deleting:")
+    logger.info(f"  - User: {email} (ID: {user.id})")
+    logger.info(f"  - Plan: {planId}")
+    logger.info(f"  - Exercise ID: {exercise_id}")
+
+    try:
+        # Find the exercise tracking record
+        existing_record = db.query(DBExerciseTracking).filter(
+            DBExerciseTracking.id == exercise_id,
+            DBExerciseTracking.user_id == user.id,
+            DBExerciseTracking.plan_id == planId
+        ).first()
+
+        if not existing_record:
+            logger.warning(f"⚠️ [EXERCISE DELETE] Exercise record not found: {exercise_id}")
+            # Return success anyway - idempotent delete
+            return {
+                "success": True,
+                "message": "Exercise tracking record not found (already deleted)",
+                "record_id": exercise_id
+            }
+
+        # Delete the record
+        db.delete(existing_record)
+        db.commit()
+        
+        logger.info(f"✅ [EXERCISE DELETE] Successfully deleted exercise: {exercise_id}")
+        
+        return {
+            "success": True,
+            "message": "Exercise tracking deleted successfully",
+            "record_id": exercise_id,
+            "debug_info": {
+                "user_id": user.id,
+                "plan_id": planId,
+                "exercise_id": exercise_id
+            }
+        }
+
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error(f"❌ [EXERCISE DELETE] Database error: {e}")
+        raise HTTPException(500, "Database error occurred while deleting exercise tracking")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"❌ [EXERCISE DELETE] Unexpected error: {e}")
+        logger.exception("Full traceback:")
+        raise HTTPException(500, f"An unexpected error occurred: {str(e)}")
+
 @router.get("/exercises/debug")
 async def debug_exercise_tracking(
     email: str,

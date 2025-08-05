@@ -4,9 +4,10 @@ import uuid
 import logging
 import re
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -83,11 +84,23 @@ async def update_session(
     current_user: str = Depends(get_current_user_email),
     db: Session   = Depends(get_db),
 ) -> Dict[str, Any]:
+    """
+    Update session tracking with proper field mapping
+    FIXED: Handles both camelCase (iOS) and snake_case (backend) 
+    """
+    logger.info(f"📝 [SESSION UPDATE] Starting session update:")
+    logger.info(f"  - Email: {email}")
+    logger.info(f"  - Plan: {planId}")
+    logger.info(f"  - Session: {sessionId}")
+    logger.info(f"  - Update: {update.dict()}")
+    
     if email != current_user:
+        logger.warning(f"❌ [SESSION UPDATE] Unauthorized access attempt")
         raise HTTPException(403, "Unauthorized")
 
     user = db.query(User).filter(User.email == email).first()
     if not user:
+        logger.error(f"❌ [SESSION UPDATE] User not found: {email}")
         raise HTTPException(404, "User not found")
 
     try:
@@ -102,20 +115,35 @@ async def update_session(
         )
 
         if sess:
-            # update existing
-            sess.is_completed    = update.isCompleted
-            sess.notes           = update.notes
-            sess.completion_date = update.completionDate
+            # Update existing session
+            logger.info(f"🔄 [SESSION UPDATE] Updating existing session: {sessionId}")
+            
+            # CRITICAL FIX: Handle both camelCase and snake_case from iOS
+            completed = getattr(update, 'isCompleted', None) or getattr(update, 'is_completed', False)
+            notes = getattr(update, 'notes', '') or ''
+            completion_date = getattr(update, 'completionDate', None) or getattr(update, 'completion_date', None)
+            
+            sess.is_completed    = completed
+            sess.notes           = notes
+            sess.completion_date = completion_date
             sess.updated_at      = datetime.utcnow()
+            
+            logger.info(f"✅ [SESSION UPDATE] Updated fields:")
+            logger.info(f"  - is_completed: {sess.is_completed}")
+            logger.info(f"  - notes: '{sess.notes}'")
+            logger.info(f"  - completion_date: {sess.completion_date}")
         else:
-            # create new - ENSURE PLAN EXISTS FIRST
+            # Create new session
+            logger.info(f"🆕 [SESSION UPDATE] Creating new session: {sessionId}")
+            
+            # ENSURE PLAN EXISTS FIRST
             existing_plan = db.query(TrainingPlan).filter(
                 TrainingPlan.id == planId.lower(),
                 TrainingPlan.user_id == user.id
             ).first()
             
             if not existing_plan:
-                logger.warning(f"Plan {planId} not found, creating minimal plan")
+                logger.warning(f"📝 [SESSION UPDATE] Plan {planId} not found, creating minimal plan")
                 minimal_plan = TrainingPlan(
                     id=planId.lower(),
                     user_id=user.id,
@@ -127,6 +155,11 @@ async def update_session(
                 db.add(minimal_plan)
                 db.flush()
 
+            # Handle field mapping for new session too
+            completed = getattr(update, 'isCompleted', None) or getattr(update, 'is_completed', False)
+            notes = getattr(update, 'notes', '') or ''
+            completion_date = getattr(update, 'completionDate', None) or getattr(update, 'completion_date', None)
+
             new_sess = DBSessionTracking(
                 id             = sessionId.lower(),
                 user_id        = user.id,
@@ -134,23 +167,87 @@ async def update_session(
                 week_number    = 1,                    # Default values
                 day_of_week    = "Monday",             # Default values
                 focus_name     = "Training Session",   # Default values
-                is_completed   = update.isCompleted,
-                notes          = update.notes,
-                completion_date=update.completionDate
+                is_completed   = completed,
+                notes          = notes,
+                completion_date= completion_date,
+                created_at     = datetime.utcnow(),
+                updated_at     = datetime.utcnow()
             )
             db.add(new_sess)
+            
+            logger.info(f"✅ [SESSION UPDATE] Created new session with fields:")
+            logger.info(f"  - is_completed: {new_sess.is_completed}")
+            logger.info(f"  - notes: '{new_sess.notes}'")
 
         db.commit()
-        return {"success": True, "message": "Session updated successfully"}
+        logger.info(f"✅ [SESSION UPDATE] Session update committed successfully")
+        
+        return {
+            "success": True, 
+            "message": "Session updated successfully",
+            "debug_info": {
+                "session_id": sessionId,
+                "plan_id": planId,
+                "user_id": user.id,
+                "completed": completed,
+                "notes_length": len(notes)
+            }
+        }
 
     except SQLAlchemyError as e:
         db.rollback()
-        logger.exception("Error updating session %s for user %s", sessionId, email)
+        logger.exception(f"❌ [SESSION UPDATE] Database error updating session {sessionId}")
         raise HTTPException(
             status_code=500,
-            detail="Could not update session, please try again later."
+            detail=f"Database error: {str(e)}"
+        )
+    except Exception as e:
+        db.rollback()
+        logger.exception(f"❌ [SESSION UPDATE] Unexpected error updating session {sessionId}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unexpected error: {str(e)}"
         )
 
+class FlexibleSessionUpdate(BaseModel):
+    """Flexible session update model that handles both camelCase and snake_case"""
+    
+    # Primary fields (snake_case for backend)
+    is_completed: Optional[bool] = None
+    notes: Optional[str] = None
+    completion_date: Optional[datetime] = None
+    
+    # Alternative fields (camelCase from iOS)
+    isCompleted: Optional[bool] = None
+    completionDate: Optional[datetime] = None
+    
+    class Config:
+        extra = "allow"  # Allow additional fields
+    
+    def get_completed(self) -> bool:
+        """Get completion status from either field name"""
+        return self.is_completed if self.is_completed is not None else (self.isCompleted or False)
+    
+    def get_notes(self) -> str:
+        """Get notes with fallback"""
+        return self.notes or ""
+    
+    def get_completion_date(self) -> Optional[datetime]:
+        """Get completion date from either field name"""
+        return self.completion_date if self.completion_date is not None else self.completionDate
+
+
+# Update the route signature to use the flexible model:
+# @router.post("/{sessionId}", response_model=Dict[str, Any])
+# async def update_session(
+#     email: str,
+#     planId: str, 
+#     sessionId: str,
+#     update: FlexibleSessionUpdate,  # <-- Use this instead
+#     current_user: str = Depends(get_current_user_email),
+#     db: Session = Depends(get_db),
+# ):
+#     # Then use update.get_completed(), update.get_notes(), etc.
 
 @router.post("/initialize", response_model=Dict[str, Any])
 async def initialize_sessions(
