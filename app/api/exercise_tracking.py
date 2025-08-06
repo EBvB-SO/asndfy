@@ -1,7 +1,8 @@
-# app/api/exercise_tracking.py
+# app/api/exercise_tracking.py - FIXED VERSION
 
 import uuid
 import logging
+import re
 from datetime import datetime
 from typing import List, Optional
 
@@ -45,7 +46,6 @@ class ExerciseTrackingCreateEnhanced(BaseModel):
     def validate_date_format(cls, v):
         """Validate date is in YYYY-MM-DD format"""
         if not v:
-            # Use current date if none provided
             return datetime.now().strftime('%Y-%m-%d')
         
         try:
@@ -70,9 +70,9 @@ async def add_or_update_exercise(
     db: Session = Depends(get_db),
 ):
     """
-    Enhanced exercise tracking endpoint with comprehensive error handling and logging
+    FIXED: Enhanced exercise tracking endpoint with better plan/session creation
     """
-    logger.info(f"🔍 [EXERCISE API] Starting exercise tracking for user: {email}")
+    logger.info(f"🔍 [FIXED EXERCISE API] Starting exercise tracking for user: {email}")
     
     if email != current_user:
         logger.warning(f"❌ [EXERCISE API] Unauthorized access attempt: {current_user} trying to access {email}")
@@ -89,42 +89,52 @@ async def add_or_update_exercise(
     exercise_id = tracking.exercise_id.lower()
     record_id = (tracking.id or str(uuid.uuid4())).lower()
     
-    logger.info(f"🔍 [EXERCISE API] Processing exercise tracking:")
+    logger.info(f"🔍 [FIXED EXERCISE API] Processing exercise tracking:")
     logger.info(f"  - User: {email} (ID: {user.id})")
     logger.info(f"  - Plan: {planId}")
     logger.info(f"  - Session: {session_id}")
     logger.info(f"  - Exercise: {exercise_id}")
     logger.info(f"  - Record: {record_id}")
     logger.info(f"  - Date: {tracking.date}")
-    logger.info(f"  - Notes: {tracking.notes[:100]}...")
+    logger.info(f"  - Notes: {tracking.notes[:200]}...")
 
     try:
-        # Step 1: Ensure plan exists
+        # FIXED: Better plan creation with more realistic data
         existing_plan = db.query(TrainingPlan).filter(
             TrainingPlan.id == planId,
             TrainingPlan.user_id == user.id
         ).first()
         
         if not existing_plan:
-            logger.info(f"📝 [EXERCISE API] Creating minimal plan: {planId}")
-            minimal_plan = TrainingPlan(
+            logger.info(f"📝 [FIXED EXERCISE API] Creating enhanced plan: {planId}")
+            
+            # Extract route info from planId if possible
+            route_parts = planId.replace("_", " ").title().split()
+            if len(route_parts) >= 2:
+                route_name = " ".join(route_parts[:-1])
+                grade = route_parts[-1]
+            else:
+                route_name = planId.replace("_", " ").title()
+                grade = "Unknown"
+            
+            enhanced_plan = TrainingPlan(
                 id=planId,
                 user_id=user.id,
-                route_name="Auto-created Plan",
-                grade="Unknown",
-                route_overview="This plan was auto-created to support exercise tracking.",
-                training_overview="Auto-generated training plan for exercise tracking."
+                route_name=route_name,
+                grade=grade,
+                route_overview=f"Training plan for {route_name} ({grade}). This plan was auto-created to support exercise tracking and will help you systematically work towards your climbing goals.",
+                training_overview=f"Comprehensive training program designed to build the specific strength, technique, and endurance needed for {route_name}. Includes structured progressions and recovery protocols."
             )
-            db.add(minimal_plan)
+            db.add(enhanced_plan)
             try:
                 db.flush()
-                logger.info(f"✅ [EXERCISE API] Plan created successfully: {planId}")
+                logger.info(f"✅ [FIXED EXERCISE API] Enhanced plan created successfully: {planId}")
             except Exception as e:
-                logger.error(f"❌ [EXERCISE API] Failed to create plan: {e}")
+                logger.error(f"❌ [FIXED EXERCISE API] Failed to create plan: {e}")
                 db.rollback()
                 raise HTTPException(500, f"Failed to create plan: {str(e)}")
 
-        # Step 2: Ensure session exists
+        # FIXED: Better session creation with extracted info from notes
         existing_session = db.query(DBSessionTracking).filter(
             DBSessionTracking.id == session_id,
             DBSessionTracking.user_id == user.id,
@@ -132,55 +142,109 @@ async def add_or_update_exercise(
         ).first()
         
         if not existing_session:
-            logger.info(f"📝 [EXERCISE API] Creating minimal session: {session_id}")
+            logger.info(f"📝 [FIXED EXERCISE API] Creating enhanced session: {session_id}")
             
-            # Try to parse meaningful session data from the session ID or use defaults
-            minimal_session = DBSessionTracking(
+            # FIXED: Extract meaningful session data from notes if available
+            session_focus = "Training Session"
+            week_number = 1
+            day_of_week = "Monday"
+            
+            # Try to extract exercise name from notes for better focus name
+            if tracking.notes:
+                # Look for [EXERCISE:name] pattern
+                exercise_match = re.search(r'\[EXERCISE:([^\]]+)\]', tracking.notes)
+                if exercise_match:
+                    exercise_name = exercise_match.group(1)
+                    session_focus = f"{exercise_name} Session"
+                    logger.info(f"🎯 Extracted focus from notes: {session_focus}")
+                
+                # Try to infer day from session timing or default to current day
+                current_day = datetime.now().strftime("%A")
+                day_of_week = current_day
+                
+                # Try to extract week info if available
+                week_match = re.search(r'week\s*(\d+)', tracking.notes.lower())
+                if week_match:
+                    week_number = int(week_match.group(1))
+            
+            enhanced_session = DBSessionTracking(
                 id=session_id,
                 user_id=user.id,
                 plan_id=planId,
-                week_number=1,
-                day_of_week="Monday",
-                focus_name="Auto-created Session",
+                week_number=week_number,
+                day_of_week=day_of_week,
+                focus_name=session_focus,
                 is_completed=False,
-                notes="",
+                notes="Auto-created session for exercise tracking",
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow()
             )
-            db.add(minimal_session)
+            db.add(enhanced_session)
             try:
                 db.flush()
-                logger.info(f"✅ [EXERCISE API] Session created successfully: {session_id}")
+                logger.info(f"✅ [FIXED EXERCISE API] Enhanced session created: {session_id}")
             except Exception as e:
-                logger.error(f"❌ [EXERCISE API] Failed to create session: {e}")
+                logger.error(f"❌ [FIXED EXERCISE API] Failed to create session: {e}")
                 db.rollback()
                 raise HTTPException(500, f"Failed to create session: {str(e)}")
 
-        # Step 3: Parse and validate date
+        # Parse and validate date
         try:
             exercise_date = datetime.strptime(tracking.date, '%Y-%m-%d').date()
-            logger.info(f"📅 [EXERCISE API] Parsed date: {exercise_date}")
+            logger.info(f"📅 [FIXED EXERCISE API] Parsed date: {exercise_date}")
         except ValueError as e:
-            logger.error(f"❌ [EXERCISE API] Invalid date format: {tracking.date}")
+            logger.error(f"❌ [FIXED EXERCISE API] Invalid date format: {tracking.date}")
             raise HTTPException(400, f"Invalid date format: {tracking.date}. Expected YYYY-MM-DD")
 
-        # Step 4: Check if exercise tracking record already exists
+        # FIXED: Better duplicate handling - check for existing records more thoroughly
         existing_record = db.query(DBExerciseTracking).filter(
             DBExerciseTracking.id == record_id,
             DBExerciseTracking.user_id == user.id
         ).first()
 
+        # Also check for potential duplicates by session, date, and exercise content
+        potential_duplicate = None
+        if not existing_record:
+            # Look for records with similar content to avoid true duplicates
+            similar_records = db.query(DBExerciseTracking).filter(
+                DBExerciseTracking.user_id == user.id,
+                DBExerciseTracking.plan_id == planId,
+                DBExerciseTracking.session_id == session_id,
+                DBExerciseTracking.date == exercise_date
+            ).all()
+            
+            for record in similar_records:
+                # Check if the notes contain similar exercise information
+                if tracking.notes and record.notes:
+                    # Extract exercise names from both
+                    new_exercise = re.search(r'\[EXERCISE:([^\]]+)\]', tracking.notes)
+                    existing_exercise = re.search(r'\[EXERCISE:([^\]]+)\]', record.notes)
+                    
+                    if new_exercise and existing_exercise:
+                        if new_exercise.group(1) == existing_exercise.group(1):
+                            potential_duplicate = record
+                            break
+
         if existing_record:
             # Update existing record
-            logger.info(f"🔄 [EXERCISE API] Updating existing exercise record: {record_id}")
+            logger.info(f"🔄 [FIXED EXERCISE API] Updating existing exercise record: {record_id}")
             existing_record.notes = tracking.notes
             existing_record.date = exercise_date
             existing_record.updated_at = datetime.utcnow()
-            
             operation = "updated"
+            
+        elif potential_duplicate:
+            # Update the potential duplicate instead of creating a new one
+            logger.info(f"🔄 [FIXED EXERCISE API] Updating potential duplicate: {potential_duplicate.id}")
+            potential_duplicate.notes = tracking.notes
+            potential_duplicate.date = exercise_date
+            potential_duplicate.updated_at = datetime.utcnow()
+            operation = "updated"
+            record_id = potential_duplicate.id
+            
         else:
             # Create new record
-            logger.info(f"🆕 [EXERCISE API] Creating new exercise record: {record_id}")
+            logger.info(f"🆕 [FIXED EXERCISE API] Creating new exercise record: {record_id}")
             new_record = DBExerciseTracking(
                 id=record_id,
                 user_id=user.id,
@@ -195,12 +259,12 @@ async def add_or_update_exercise(
             db.add(new_record)
             operation = "created"
 
-        # Step 5: Commit the transaction
+        # Commit the transaction
         try:
             db.commit()
-            logger.info(f"✅ [EXERCISE API] Successfully {operation} exercise tracking: {record_id}")
+            logger.info(f"✅ [FIXED EXERCISE API] Successfully {operation} exercise tracking: {record_id}")
         except Exception as e:
-            logger.error(f"❌ [EXERCISE API] Commit failed: {e}")
+            logger.error(f"❌ [FIXED EXERCISE API] Commit failed: {e}")
             db.rollback()
             raise HTTPException(500, f"Failed to save exercise tracking: {str(e)}")
         
@@ -214,18 +278,17 @@ async def add_or_update_exercise(
                 "plan_id": planId,
                 "session_id": session_id,
                 "exercise_id": exercise_id,
-                "date": tracking.date
+                "date": tracking.date,
+                "notes_length": len(tracking.notes)
             }
         }
 
     except HTTPException:
-        # Re-raise HTTP exceptions as-is
         raise
     except IntegrityError as e:
         db.rollback()
-        logger.error(f"❌ [EXERCISE API] Database integrity error: {e}")
+        logger.error(f"❌ [FIXED EXERCISE API] Database integrity error: {e}")
         
-        # Check specific constraint violations
         error_detail = str(e.orig) if hasattr(e, 'orig') else str(e)
         if 'foreign key' in error_detail.lower():
             if 'session_id' in error_detail.lower():
@@ -239,14 +302,15 @@ async def add_or_update_exercise(
             
     except SQLAlchemyError as e:
         db.rollback()
-        logger.error(f"❌ [EXERCISE API] SQLAlchemy error: {e}")
+        logger.error(f"❌ [FIXED EXERCISE API] SQLAlchemy error: {e}")
         raise HTTPException(500, "Database error occurred while saving exercise tracking")
     except Exception as e:
         db.rollback()
-        logger.error(f"❌ [EXERCISE API] Unexpected error: {e}")
+        logger.error(f"❌ [FIXED EXERCISE API] Unexpected error: {e}")
         logger.exception("Full traceback:")
         raise HTTPException(500, f"An unexpected error occurred: {str(e)}")
 
+# Keep all other existing endpoints unchanged
 @router.get("/exercises", response_model=List[ExerciseTracking])
 async def get_exercises(
     email: str,
@@ -254,7 +318,7 @@ async def get_exercises(
     current_user: str = Depends(get_current_user_email),
     db: Session = Depends(get_db),
 ):
-    """Fetch all exercise tracking records for a given plan with enhanced error handling"""
+    """Fetch all exercise tracking records for a given plan"""
     if email != current_user:
         raise HTTPException(403, "Unauthorized")
 
@@ -304,9 +368,7 @@ async def delete_exercise_tracking(
     current_user: str = Depends(get_current_user_email),
     db: Session = Depends(get_db),
 ):
-    """
-    Delete an exercise tracking record
-    """
+    """Delete an exercise tracking record"""
     logger.info(f"🗑️ [EXERCISE DELETE] Starting deletion for exercise: {exercise_id}")
     
     if email != current_user:
@@ -318,7 +380,6 @@ async def delete_exercise_tracking(
         logger.error(f"❌ [EXERCISE DELETE] User not found: {email}")
         raise HTTPException(404, "User not found")
 
-    # Ensure consistent lowercase IDs
     planId = planId.lower()
     exercise_id = exercise_id.lower()
     
@@ -328,7 +389,6 @@ async def delete_exercise_tracking(
     logger.info(f"  - Exercise ID: {exercise_id}")
 
     try:
-        # Find the exercise tracking record
         existing_record = db.query(DBExerciseTracking).filter(
             DBExerciseTracking.id == exercise_id,
             DBExerciseTracking.user_id == user.id,
@@ -337,14 +397,12 @@ async def delete_exercise_tracking(
 
         if not existing_record:
             logger.warning(f"⚠️ [EXERCISE DELETE] Exercise record not found: {exercise_id}")
-            # Return success anyway - idempotent delete
             return {
                 "success": True,
                 "message": "Exercise tracking record not found (already deleted)",
                 "record_id": exercise_id
             }
 
-        # Delete the record
         db.delete(existing_record)
         db.commit()
         
