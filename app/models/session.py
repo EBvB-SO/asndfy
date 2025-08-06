@@ -6,10 +6,10 @@ from datetime import datetime
 
 class SessionTracking(BaseModel):
     id: str
-    planId: str = Field(..., alias="plan_id")
-    weekNumber: int = Field(..., alias="week_number")
-    dayOfWeek: str = Field(..., alias="day_of_week")
-    focusName: str = Field(..., alias="focus_name")
+    planId: str = Field(alias="plan_id")
+    weekNumber: int = Field(alias="week_number")
+    dayOfWeek: str = Field(alias="day_of_week") 
+    focusName: str = Field(alias="focus_name")
     isCompleted: bool = Field(default=False, alias="is_completed")
     notes: str = ""
     completionDate: Optional[datetime] = Field(None, alias="completion_date")
