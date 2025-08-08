@@ -1,4 +1,4 @@
-# FIXED: app/api/exercise_tracking.py
+# app/api/exercise_tracking.py
 
 import uuid
 import logging
@@ -274,6 +274,81 @@ async def get_exercises(
     except SQLAlchemyError as e:
         logger.error(f"❌ Database error: {e}")
         raise HTTPException(500, "Database error occurred")
+
+@router.put("/exercises/{exercise_id}")
+async def update_exercise_tracking(
+    email: str,
+    planId: str,
+    exercise_id: str,
+    tracking: ExerciseTrackingCreateEnhanced,
+    current_user: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db),
+):
+    """Update an existing exercise tracking record"""
+    logger.info(f"🔄 [UPDATE EXERCISE] Processing update for: {exercise_id}")
+    
+    if email != current_user:
+        raise HTTPException(403, "Unauthorized")
+
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(404, "User not found")
+
+    # Normalize IDs
+    planId = planId.lower()
+    exercise_id = exercise_id.lower()
+    
+    try:
+        # Find existing record
+        existing_record = db.query(DBExerciseTracking).filter(
+            DBExerciseTracking.id == exercise_id,
+            DBExerciseTracking.user_id == user.id,
+            DBExerciseTracking.plan_id == planId
+        ).first()
+
+        if not existing_record:
+            raise HTTPException(404, "Exercise record not found")
+
+        # Extract exercise title from notes
+        exercise_title = extract_exact_exercise_title_from_notes(tracking.notes)
+        if not exercise_title or exercise_title == tracking.notes:
+            clean_title = tracking.notes.split("]")[-1].strip()
+            if clean_title.endswith(" completed") or clean_title.endswith(" Completed"):
+                clean_title = clean_title.rsplit(" ", 1)[0]
+            exercise_title = clean_title or "Unknown Exercise"
+
+        # Parse date
+        try:
+            exercise_date = datetime.strptime(tracking.date, '%Y-%m-%d').date()
+        except ValueError:
+            raise HTTPException(400, f"Invalid date format: {tracking.date}")
+
+        # Create enhanced notes
+        enhanced_notes = f"[EXERCISE:{exercise_title}][KEY:{exercise_id}] {tracking.notes}"
+        
+        # Update the record
+        existing_record.date = exercise_date
+        existing_record.notes = enhanced_notes
+        existing_record.updated_at = datetime.utcnow()
+
+        db.commit()
+        logger.info(f"✅ Successfully updated exercise: {exercise_id}")
+        logger.info(f"  - New date: {exercise_date}")
+        
+        return {
+            "success": True, 
+            "message": "Exercise tracking updated successfully",
+            "exercise_id": exercise_id,
+            "new_date": exercise_date.isoformat(),
+            "exercise_title": exercise_title
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"❌ Unexpected error updating exercise: {e}")
+        raise HTTPException(500, f"Database error: {str(e)}")
 
 # Keep delete endpoint unchanged
 @router.delete("/exercises/{exercise_id}")
