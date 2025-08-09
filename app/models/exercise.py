@@ -40,8 +40,22 @@ class ExerciseEntryCreate(ExerciseEntryBase):
     pass
 
 class ExerciseEntryUpdate(BaseModel):
-    type: Optional[str]
-    duration_minutes: Optional[int]
+    """
+        Data required to update an existing exercise entry.
+
+        By default only the fields provided by the client will be updated.  To
+        support editing the date of an entry we include an optional
+        ``timestamp`` field.  If the caller omits ``timestamp`` then the
+        original timestamp on the entry is retained.  Without this field
+        the backend cannot move an exercise to a different date when the
+        user edits the entry via the mobile app.
+    """
+    type: Optional[str] = None
+    duration_minutes: Optional[int] = None
+    # Optional new timestamp for the entry.  When supplied the
+    # ``update_exercise`` function in ``db_access`` will replace the
+    # existing timestamp with this value.
+    timestamp: Optional[datetime] = None
 
 class ExerciseEntry(ExerciseEntryBase):
     id: int

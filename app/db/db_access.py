@@ -3,10 +3,9 @@
 import logging
 import uuid
 from typing import List, Dict, Any, Optional
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from sqlalchemy.exc import IntegrityError
-from datetime import datetime
 from contextlib import contextmanager
 
 from app.core.database import get_db_session, SessionLocal
@@ -395,6 +394,15 @@ def update_exercise(entry_id: int, data: ExerciseEntryUpdate, user_id: str) -> O
             existing.type = data.type
         if data.duration_minutes is not None:
             existing.duration_minutes = data.duration_minutes
+        # Allow editing the timestamp: if a new timestamp is provided,
+        # update the entry’s timestamp to that value.  Without this,
+        # date edits from the client are silently ignored.
+        if data.timestamp is not None:
+            ts = data.timestamp
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            existing.timestamp = ts
+
         db.commit()
         db.refresh(existing)
         return ExerciseEntry(

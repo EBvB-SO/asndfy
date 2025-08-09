@@ -1,6 +1,7 @@
 # app/api/exercise_tracking.py
 
 import uuid
+from uuid import uuid4, uuid5, NAMESPACE_DNS
 import logging
 import re
 import hashlib
@@ -87,9 +88,9 @@ async def add_or_update_exercise(
     current_user: str = Depends(get_current_user_email),
     db: Session = Depends(get_db),
 ):
-    """FIXED: Enhanced exercise tracking with exact matching"""
+    """Enhanced exercise tracking: UUID PK for new records, legacy key for compatibility."""
     logger.info(f"🔍 [FIXED EXERCISE API] Processing exercise for: {email}")
-    
+
     if email != current_user:
         raise HTTPException(403, "Unauthorized")
 
@@ -101,26 +102,27 @@ async def add_or_update_exercise(
     planId = planId.lower()
     session_id = tracking.session_id.lower()
     exercise_id = tracking.exercise_id.lower()
-    
-    # FIXED: Extract exact exercise title from notes
+
+    # Extract exact exercise title from notes
     exercise_title = extract_exact_exercise_title_from_notes(tracking.notes)
     if not exercise_title or exercise_title == tracking.notes:
-        # If no [EXERCISE:] tag found, create one from the raw notes
-        # This handles cases where iOS sends raw exercise names
         clean_title = tracking.notes.split("]")[-1].strip()
         if clean_title.endswith(" completed") or clean_title.endswith(" Completed"):
             clean_title = clean_title.rsplit(" ", 1)[0]
         exercise_title = clean_title or "Unknown Exercise"
-    
-    # FIXED: Generate unique key
-    if tracking.id:
+
+    # Decide primary key (UUID) and legacy key
+    if tracking.id and re.fullmatch(r"[0-9a-fA-F-]{36}", tracking.id):
         record_id = tracking.id.lower()
     else:
-        record_id = generate_unique_exercise_key(planId, session_id, exercise_title)
-    
+        record_id = str(uuid4())  # New proper UUID for DB PK
+
+    legacy_key = generate_unique_exercise_key(planId, session_id, exercise_title)
+
     logger.info(f"🔍 [FIXED] Tracking details:")
     logger.info(f"  - Exercise Title: '{exercise_title}'")
-    logger.info(f"  - Record ID: {record_id}")
+    logger.info(f"  - UUID PK: {record_id}")
+    logger.info(f"  - Legacy Key: {legacy_key}")
     logger.info(f"  - Session: {session_id}")
 
     try:
@@ -129,13 +131,11 @@ async def add_or_update_exercise(
             TrainingPlan.id == planId,
             TrainingPlan.user_id == user.id
         ).first()
-        
         if not existing_plan:
             logger.info(f"📝 Creating plan: {planId}")
             route_parts = planId.replace("_", " ").title().split()
             route_name = " ".join(route_parts[:-1]) if len(route_parts) >= 2 else planId.replace("_", " ").title()
             grade = route_parts[-1] if len(route_parts) >= 2 else "Unknown"
-            
             new_plan = TrainingPlan(
                 id=planId,
                 user_id=user.id,
@@ -153,7 +153,6 @@ async def add_or_update_exercise(
             DBSessionTracking.user_id == user.id,
             DBSessionTracking.plan_id == planId
         ).first()
-        
         if not existing_session:
             logger.info(f"📝 Creating session: {session_id}")
             new_session = DBSessionTracking(
@@ -177,25 +176,30 @@ async def add_or_update_exercise(
         except ValueError:
             raise HTTPException(400, f"Invalid date format: {tracking.date}")
 
-        # FIXED: Create properly formatted notes with exact title
-        enhanced_notes = f"[EXERCISE:{exercise_title}][KEY:{record_id}] {tracking.notes}"
-        
-        # FIXED: Check for exact duplicate by record ID only
+        # Prepare notes with legacy key
+        enhanced_notes = f"[EXERCISE:{exercise_title}][KEY:{legacy_key}] {tracking.notes}"
+
+        # Try to find existing record by UUID PK
         existing_record = db.query(DBExerciseTracking).filter(
             DBExerciseTracking.id == record_id,
             DBExerciseTracking.user_id == user.id
         ).first()
 
+        # If not found and client sent old non-UUID id, try fallback search by legacy key
+        if not existing_record and tracking.id and not re.fullmatch(r"[0-9a-fA-F-]{36}", tracking.id):
+            existing_record = db.query(DBExerciseTracking).filter(
+                DBExerciseTracking.user_id == user.id,
+                DBExerciseTracking.notes.ilike(f"%[KEY:{tracking.id}]%")
+            ).first()
+
         if existing_record:
-            # Update existing
-            logger.info(f"🔄 Updating existing record: {record_id}")
+            logger.info(f"🔄 Updating existing record: {existing_record.id}")
             existing_record.notes = enhanced_notes
             existing_record.date = exercise_date
             existing_record.updated_at = datetime.utcnow()
             operation = "updated"
         else:
-            # Create new - NO duplicate checking by title/session
-            logger.info(f"🆕 Creating new record: {record_id}")
+            logger.info(f"🆕 Creating new record with UUID PK: {record_id}")
             new_record = DBExerciseTracking(
                 id=record_id,
                 user_id=user.id,
@@ -212,9 +216,9 @@ async def add_or_update_exercise(
 
         db.commit()
         logger.info(f"✅ Successfully {operation} exercise: {record_id}")
-        
+
         return {
-            "success": True, 
+            "success": True,
             "message": f"Exercise tracking {operation} successfully",
             "record_id": record_id,
             "operation": operation,
@@ -227,6 +231,7 @@ async def add_or_update_exercise(
         db.rollback()
         logger.error(f"❌ Unexpected error: {e}")
         raise HTTPException(500, f"Database error: {str(e)}")
+
 
 @router.get("/exercises", response_model=List[ExerciseTracking])
 async def get_exercises(
@@ -284,7 +289,7 @@ async def update_exercise_tracking(
     current_user: str = Depends(get_current_user_email),
     db: Session = Depends(get_db),
 ):
-    """Update an existing exercise tracking record"""
+    """Update an existing exercise tracking record while preserving legacy key."""
     logger.info(f"🔄 [UPDATE EXERCISE] Processing update for: {exercise_id}")
     
     if email != current_user:
@@ -299,17 +304,43 @@ async def update_exercise_tracking(
     exercise_id = exercise_id.lower()
     
     try:
-        # Find existing record
-        existing_record = db.query(DBExerciseTracking).filter(
-            DBExerciseTracking.id == exercise_id,
-            DBExerciseTracking.user_id == user.id,
-            DBExerciseTracking.plan_id == planId
-        ).first()
+        # Find existing record by UUID PK first
+        existing_record = (
+            db.query(DBExerciseTracking)
+            .filter(
+                DBExerciseTracking.id == exercise_id,
+                DBExerciseTracking.user_id == user.id,
+                DBExerciseTracking.plan_id == planId
+            )
+            .first()
+        )
+
+        # If not found, try legacy key match in notes
+        if not existing_record:
+            key_marker = f"[KEY:{exercise_id}]"
+            existing_record = (
+                db.query(DBExerciseTracking)
+                .filter(
+                    DBExerciseTracking.user_id == user.id,
+                    DBExerciseTracking.plan_id == planId,
+                    DBExerciseTracking.notes.ilike(f"%{key_marker}%")
+                )
+                .first()
+            )
 
         if not existing_record:
             raise HTTPException(404, "Exercise record not found")
 
-        # Extract exercise title from notes
+        # Extract existing legacy key from notes if present
+        legacy_key_match = re.search(r"\[KEY:([^\]]+)\]", existing_record.notes or "")
+        if legacy_key_match:
+            legacy_key = legacy_key_match.group(1).strip()
+        else:
+            # No existing legacy key, generate one
+            exercise_title_for_key = extract_exact_exercise_title_from_notes(tracking.notes) or "Unknown Exercise"
+            legacy_key = generate_unique_exercise_key(planId, existing_record.session_id, exercise_title_for_key)
+
+        # Extract exercise title from updated notes
         exercise_title = extract_exact_exercise_title_from_notes(tracking.notes)
         if not exercise_title or exercise_title == tracking.notes:
             clean_title = tracking.notes.split("]")[-1].strip()
@@ -317,30 +348,32 @@ async def update_exercise_tracking(
                 clean_title = clean_title.rsplit(" ", 1)[0]
             exercise_title = clean_title or "Unknown Exercise"
 
-        # Parse date
+        # Parse and validate date
         try:
             exercise_date = datetime.strptime(tracking.date, '%Y-%m-%d').date()
         except ValueError:
             raise HTTPException(400, f"Invalid date format: {tracking.date}")
 
-        # Create enhanced notes
-        enhanced_notes = f"[EXERCISE:{exercise_title}][KEY:{exercise_id}] {tracking.notes}"
+        # Preserve the same legacy key in notes
+        enhanced_notes = f"[EXERCISE:{exercise_title}][KEY:{legacy_key}] {tracking.notes}"
         
-        # Update the record
+        # Apply updates
         existing_record.date = exercise_date
         existing_record.notes = enhanced_notes
         existing_record.updated_at = datetime.utcnow()
 
         db.commit()
-        logger.info(f"✅ Successfully updated exercise: {exercise_id}")
+        logger.info(f"✅ Successfully updated exercise: {existing_record.id}")
         logger.info(f"  - New date: {exercise_date}")
+        logger.info(f"  - Legacy Key preserved: {legacy_key}")
         
         return {
             "success": True, 
             "message": "Exercise tracking updated successfully",
-            "exercise_id": exercise_id,
+            "exercise_id": existing_record.id,
             "new_date": exercise_date.isoformat(),
-            "exercise_title": exercise_title
+            "exercise_title": exercise_title,
+            "legacy_key": legacy_key
         }
 
     except HTTPException:
