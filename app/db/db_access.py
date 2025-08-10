@@ -908,6 +908,26 @@ def get_exercise_tracking_for_session(session_id: str) -> List[Dict[str, Any]]:
 # TRAINING PLAN CRUD
 # ------------------------------------------------------------------
 
+def delete_training_plan(plan_id: str) -> DBResult:
+    """
+    Permanently delete a training plan and all associated phases/sessions.
+    Due to the cascade configuration on the relationships, deleting the
+    TrainingPlan row will cascade to PlanPhase, PlanSession, session_tracking
+    and exercise_tracking.
+    """
+    with get_db_session() as db:
+        try:
+            plan = db.query(TrainingPlan).filter(TrainingPlan.id == plan_id).first()
+            if not plan:
+                return DBResult(False, "Training plan not found")
+            db.delete(plan)
+            db.commit()
+            return DBResult(True, "Training plan deleted", plan_id)
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error deleting training plan: {e}")
+            return DBResult(False, f"Error deleting training plan: {e}")
+
 def create_training_plan(user_id: str, plan_data: Dict[str, Any]) -> DBResult:
     """
     Create a new TrainingPlan with nested phases & sessions.
@@ -923,6 +943,7 @@ def create_training_plan(user_id: str, plan_data: Dict[str, Any]) -> DBResult:
                 grade=plan_data["grade"],
                 route_overview=plan_data.get("route_overview"),
                 training_overview=plan_data.get("training_overview"),
+                purchased_at=plan_data.get("purchased_at", datetime.now(timezone.utc)),
             )
             db.add(plan)
             db.flush()
