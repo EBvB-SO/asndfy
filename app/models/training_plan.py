@@ -16,8 +16,8 @@ class PlanPhaseBase(BaseModel):
 class TrainingPlanBase(BaseModel):
     route_name: str
     grade: str
-    route_overview: str
-    training_overview: str
+    route_overview: Optional[str] = ""
+    training_overview: Optional[str] = ""
     phases: List[PlanPhaseBase] = Field(default_factory=list)
 
 class PhasePlanRequest(BaseModel):

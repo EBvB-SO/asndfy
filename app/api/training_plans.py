@@ -138,7 +138,6 @@ def get_training_plans(
     email: str,
     current_user: str = Depends(get_current_user_email)
 ):
-    """Get all training plans for a user."""
     if email != current_user:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
@@ -149,11 +148,10 @@ def get_training_plans(
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         user_id = user["id"]
+
+        # Retrieve simple list of plans
         plans = db.get_user_training_plans(user_id) or []
-        plans = [
-            p for p in plans
-            if p.get("phases")  # keep only plans that actually have phases
-        ]
+        # DO NOT filter out empty phases; Pydantic will create an empty list
         return plans
 
 @router.get("/{email}/{plan_id}")
