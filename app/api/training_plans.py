@@ -149,9 +149,12 @@ def get_training_plans(
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         user_id = user["id"]
-        plans = db.get_user_training_plans(user_id)
+        plans = db.get_user_training_plans(user_id) or []
+        plans = [
+            p for p in plans
+            if p.get("phases")  # keep only plans that actually have phases
+        ]
         return plans
-
 
 @router.get("/{email}/{plan_id}")
 def get_training_plan(

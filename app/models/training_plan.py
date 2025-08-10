@@ -1,5 +1,5 @@
-# models/training_plan.py
-from pydantic import BaseModel
+# app/models/training_plan.py
+from pydantic import BaseModel, Field
 from typing import List, Optional
 
 class PlanSessionBase(BaseModel):
@@ -17,7 +17,7 @@ class TrainingPlanBase(BaseModel):
     grade: str
     route_overview: str
     training_overview: str
-    phases: List[PlanPhaseBase]
+    phases: List[PlanPhaseBase] = Field(default_factory=list)
 
 class PhasePlanRequest(BaseModel):
     route: str
