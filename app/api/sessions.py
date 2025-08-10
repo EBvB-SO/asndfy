@@ -2,23 +2,20 @@
 
 import uuid
 import logging
-import re
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, AliasChoices, ConfigDict
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.db.models import (
     User,
     SessionTracking as DBSessionTracking,
-    PlanPhase,
-    PlanSession,
     TrainingPlan,
 )
-from app.models.session import SessionTracking, SessionTrackingUpdateBody
+from app.models.session import SessionTracking
 from app.core.dependencies import get_current_user_email
 from app.core.database import get_db
 
@@ -74,180 +71,6 @@ async def get_sessions(
         )
         for s in sessions
     ]
-
-@router.post("/{sessionId}", response_model=Dict[str, Any])
-async def update_session(
-    email: str,
-    planId: str,
-    sessionId: str,
-    update: SessionTrackingUpdateBody,
-    current_user: str = Depends(get_current_user_email),
-    db: Session   = Depends(get_db),
-) -> Dict[str, Any]:
-    """
-    Update session tracking with proper field mapping
-    FIXED: Handles both camelCase (iOS) and snake_case (backend) 
-    """
-    logger.info(f"📝 [SESSION UPDATE] Starting session update:")
-    logger.info(f"  - Email: {email}")
-    logger.info(f"  - Plan: {planId}")
-    logger.info(f"  - Session: {sessionId}")
-    logger.info(f"  - Update: {update.dict()}")
-    
-    if email != current_user:
-        logger.warning(f"❌ [SESSION UPDATE] Unauthorized access attempt")
-        raise HTTPException(403, "Unauthorized")
-
-    user = db.query(User).filter(User.email == email).first()
-    if not user:
-        logger.error(f"❌ [SESSION UPDATE] User not found: {email}")
-        raise HTTPException(404, "User not found")
-
-    try:
-        sess = (
-            db.query(DBSessionTracking)
-              .filter(
-                  DBSessionTracking.id      == sessionId.lower(),
-                  DBSessionTracking.user_id == user.id,
-                  DBSessionTracking.plan_id == planId.lower(),
-              )
-              .first()
-        )
-
-        if sess:
-            # Update existing session
-            logger.info(f"🔄 [SESSION UPDATE] Updating existing session: {sessionId}")
-            
-            # CRITICAL FIX: Handle both camelCase and snake_case from iOS
-            completed = getattr(update, 'isCompleted', None) or getattr(update, 'is_completed', False)
-            notes = getattr(update, 'notes', '') or ''
-            completion_date = getattr(update, 'completionDate', None) or getattr(update, 'completion_date', None)
-            
-            sess.is_completed    = completed
-            sess.notes           = notes
-            sess.completion_date = completion_date
-            sess.updated_at      = datetime.utcnow()
-            
-            logger.info(f"✅ [SESSION UPDATE] Updated fields:")
-            logger.info(f"  - is_completed: {sess.is_completed}")
-            logger.info(f"  - notes: '{sess.notes}'")
-            logger.info(f"  - completion_date: {sess.completion_date}")
-        else:
-            # Create new session
-            logger.info(f"🆕 [SESSION UPDATE] Creating new session: {sessionId}")
-            
-            # ENSURE PLAN EXISTS FIRST
-            existing_plan = db.query(TrainingPlan).filter(
-                TrainingPlan.id == planId.lower(),
-                TrainingPlan.user_id == user.id
-            ).first()
-            
-            if not existing_plan:
-                logger.warning(f"📝 [SESSION UPDATE] Plan {planId} not found, creating minimal plan")
-                minimal_plan = TrainingPlan(
-                    id=planId.lower(),
-                    user_id=user.id,
-                    route_name="Local Training Plan",
-                    grade="Unknown",
-                    route_overview="Auto-created for session tracking",
-                    training_overview="This plan was auto-created from session data."
-                )
-                db.add(minimal_plan)
-                db.flush()
-
-            # Handle field mapping for new session too
-            completed = getattr(update, 'isCompleted', None) or getattr(update, 'is_completed', False)
-            notes = getattr(update, 'notes', '') or ''
-            completion_date = getattr(update, 'completionDate', None) or getattr(update, 'completion_date', None)
-
-            new_sess = DBSessionTracking(
-                id             = sessionId.lower(),
-                user_id        = user.id,
-                plan_id        = planId.lower(),
-                week_number    = 1,                    # Default values
-                day_of_week    = "Monday",             # Default values
-                focus_name     = "Training Session",   # Default values
-                is_completed   = completed,
-                notes          = notes,
-                completion_date= completion_date,
-                created_at     = datetime.utcnow(),
-                updated_at     = datetime.utcnow()
-            )
-            db.add(new_sess)
-            
-            logger.info(f"✅ [SESSION UPDATE] Created new session with fields:")
-            logger.info(f"  - is_completed: {new_sess.is_completed}")
-            logger.info(f"  - notes: '{new_sess.notes}'")
-
-        db.commit()
-        logger.info(f"✅ [SESSION UPDATE] Session update committed successfully")
-        
-        return {
-            "success": True, 
-            "message": "Session updated successfully",
-            "debug_info": {
-                "session_id": sessionId,
-                "plan_id": planId,
-                "user_id": user.id,
-                "completed": completed,
-                "notes_length": len(notes)
-            }
-        }
-
-    except SQLAlchemyError as e:
-        db.rollback()
-        logger.exception(f"❌ [SESSION UPDATE] Database error updating session {sessionId}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Database error: {str(e)}"
-        )
-    except Exception as e:
-        db.rollback()
-        logger.exception(f"❌ [SESSION UPDATE] Unexpected error updating session {sessionId}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Unexpected error: {str(e)}"
-        )
-
-class FlexibleSessionUpdate(BaseModel):
-    """Flexible session update model that handles both camelCase and snake_case"""
-    
-    # Primary fields (snake_case for backend)
-    is_completed: Optional[bool] = None
-    notes: Optional[str] = None
-    completion_date: Optional[datetime] = None
-    
-    # Alternative fields (camelCase from iOS)
-    isCompleted: Optional[bool] = None
-    completionDate: Optional[datetime] = None
-    
-    class Config:
-        extra = "allow"  # Allow additional fields
-    
-    def get_completed(self) -> bool:
-        """Get completion status from either field name"""
-        return self.is_completed if self.is_completed is not None else (self.isCompleted or False)
-    
-    def get_notes(self) -> str:
-        """Get notes with fallback"""
-        return self.notes or ""
-    
-    def get_completion_date(self) -> Optional[datetime]:
-        """Get completion date from either field name"""
-        return self.completion_date if self.completion_date is not None else self.completionDate
-
-
-# Update the route signature to use the flexible model:
-# @router.post("/{sessionId}", response_model=Dict[str, Any])
-# async def update_session(
-#     email: str,
-#     planId: str, 
-#     sessionId: str,
-#     update: FlexibleSessionUpdate,  # <-- Use this instead
-#     current_user: str = Depends(get_current_user_email),
-#     db: Session = Depends(get_db),
-# ):
-#     # Then use update.get_completed(), update.get_notes(), etc.
 
 @router.post("/initialize", response_model=Dict[str, Any])
 async def initialize_sessions(
@@ -329,6 +152,8 @@ async def initialize_sessions(
                         focus_name     = f"{focus} - {phase_name}",
                         is_completed   = False,
                         notes          = "",
+                        created_at=datetime.utcnow(),
+                        updated_at=datetime.utcnow(), 
                     )
                     db.add(new_s)
                     created.append({
@@ -356,3 +181,145 @@ async def initialize_sessions(
             status_code=500,
             detail="Could not initialize sessions, please try again later."
         )
+    
+class SessionUpdate(BaseModel):
+    # Accept both is_completed and isCompleted
+    is_completed: Optional[bool] = Field(
+        default=None,
+        validation_alias=AliasChoices("is_completed", "isCompleted")
+    )
+    # Accept notes
+    notes: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("notes",)
+    )
+    # Accept both completion_date and completionDate
+    completion_date: Optional[datetime] = Field(
+        default=None,
+        validation_alias=AliasChoices("completion_date", "completionDate")
+    )
+
+    model_config = ConfigDict(extra="ignore")
+
+@router.post("/{sessionId}", response_model=Dict[str, Any])
+async def update_session(
+    email: str,
+    planId: str,
+    sessionId: str,
+    update: SessionUpdate,
+    current_user: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """
+    Update session tracking. Accepts both camelCase and snake_case fields via Pydantic aliases.
+    """
+    logger.info("📝 [SESSION UPDATE] Start")
+    logger.info(f"  - Email: {email}")
+    logger.info(f"  - Plan: {planId}")
+    logger.info(f"  - Session: {sessionId}")
+    logger.info(f"  - Update: {update.model_dump(exclude_none=True)}")
+
+    if email != current_user:
+        logger.warning("❌ [SESSION UPDATE] Unauthorized")
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        logger.error(f"❌ [SESSION UPDATE] User not found: {email}")
+        raise HTTPException(status_code=404, detail="User not found")
+
+    plan_id = planId.lower()
+    sess_id = sessionId.lower()
+
+    # Extract final values once
+    completed: bool = update.is_completed if update.is_completed is not None else False
+    notes: str = (update.notes or "")
+    completion_date: Optional[datetime] = update.completion_date
+
+    try:
+        sess = (
+            db.query(DBSessionTracking)
+              .filter(
+                  DBSessionTracking.id == sess_id,
+                  DBSessionTracking.user_id == user.id,
+                  DBSessionTracking.plan_id == plan_id,
+              )
+              .first()
+        )
+
+        if sess:
+            logger.info(f"🔄 [SESSION UPDATE] Updating existing session: {sess_id}")
+
+            # Only apply fields that were provided in the request
+            if update.is_completed is not None:
+                sess.is_completed = update.is_completed
+            if update.notes is not None:
+                sess.notes = update.notes
+            if update.completion_date is not None:
+                sess.completion_date = update.completion_date
+
+            sess.updated_at = datetime.utcnow()
+
+            # Reflect final values for the response/debug payload
+            completed = sess.is_completed
+            notes = sess.notes or ""
+            completion_date = sess.completion_date
+        else:
+            logger.info(f"🆕 [SESSION UPDATE] Creating new session: {sess_id}")
+
+            # Ensure plan exists
+            existing_plan = db.query(TrainingPlan).filter(
+                TrainingPlan.id == plan_id,
+                TrainingPlan.user_id == user.id
+            ).first()
+            if not existing_plan:
+                logger.warning(f"📝 [SESSION UPDATE] Plan {plan_id} not found, creating minimal plan")
+                minimal_plan = TrainingPlan(
+                    id=plan_id,
+                    user_id=user.id,
+                    route_name="Local Training Plan",
+                    grade="Unknown",
+                    route_overview="Auto-created for session tracking",
+                    training_overview="This plan was auto-created from session data."
+                )
+                db.add(minimal_plan)
+                db.flush()
+
+            new_sess = DBSessionTracking(
+                id             = sess_id,
+                user_id        = user.id,
+                plan_id        = plan_id,
+                week_number    = 1,
+                day_of_week    = "Monday",
+                focus_name     = "Training Session",
+                is_completed   = completed,
+                notes          = notes,
+                completion_date= completion_date,
+                created_at     = datetime.utcnow(),
+                updated_at     = datetime.utcnow()
+            )
+            db.add(new_sess)
+
+        db.commit()
+        logger.info("✅ [SESSION UPDATE] Commit OK")
+
+        return {
+            "success": True,
+            "message": "Session updated successfully",
+            "debug_info": {
+                "session_id": sess_id,
+                "plan_id": plan_id,
+                "user_id": user.id,
+                "completed": completed,
+                "notes_length": len(notes)
+            }
+        }
+
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.exception(f"❌ [SESSION UPDATE] DB error for session {sess_id}")
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    except Exception as e:
+        db.rollback()
+        logger.exception(f"❌ [SESSION UPDATE] Unexpected error for session {sess_id}")
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
