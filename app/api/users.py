@@ -4,10 +4,12 @@ from typing import Optional, List
 import logging
 
 from app.models.user import UserProfileData
-from app.core.dependencies import get_current_user_email
 from app.core.database import get_db
+from app.core.dependencies import get_current_user_email
+from app.models.auth_models import BaseResponse
 from sqlalchemy.orm import Session
 from app.db.models import User, UserProfile, PendingSessionUpdate
+from app.db import db_access as db
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -210,6 +212,20 @@ def get_user_stats(
         "active_projects": 0,
         "completed_projects": 0
     }
+
+@router.delete("/profile/{email}", response_model=BaseResponse)
+async def delete_profile(email: str, current_user: str = Depends(get_current_user_email)):
+    # Authorize: only allow the user to delete their own profile
+    if email != current_user:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    try:
+        db.delete_user(email)    # implement this in db_access
+        return BaseResponse(success=True, message="User deleted.", data=None)
+    except Exception as e:
+        # Log the error and return a 500 if something goes wrong
+        logger.error(f"Error deleting user {email}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete user")
 
 # Add backward compatibility routes if needed
 @router.get("/user_profile/{email}")

@@ -5,6 +5,7 @@ import uuid
 from typing import List, Dict, Any, Optional
 from datetime import date, datetime, timezone
 
+from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from contextlib import contextmanager
 
@@ -211,6 +212,17 @@ def update_user_password(email: str, new_password: str) -> DBResult:
             logger.error(f"Error updating password: {e}")
             return DBResult(False, f"Database error: {e}")
 
+def delete_user(email: str):
+    with get_db_session() as db:
+        user = db.query(User).filter(User.email == email).first()
+        if not user:
+            return
+        # Delete related entities (or configure cascade on foreign keys)
+        db.query(TrainingPlan).filter(TrainingPlan.user_id == user.id).delete()
+        db.query(Project).filter(Project.user_id == user.id).delete()
+        db.query(DailyNote).filter(DailyNote.user_id == user.id).delete()
+        db.delete(user)
+        db.commit()
 
 # ------------------------------------------------------------------
 # USER PROFILE FUNCTIONS
