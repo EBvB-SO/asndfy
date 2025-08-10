@@ -35,10 +35,16 @@ RESET_CODE_TTL = 3600  # seconds
 async def signup(data: SignUpRequest):
     result = create_user(data.name, data.email, data.password)
     if not result:
+        # Duplicate email or other create failure becomes a 400 (shown nicely in the app)
         raise HTTPException(status_code=400, detail=result.message)
-    send_welcome_email(data.email, data.name)
-    return BaseResponse(success=True, message="User created.")
 
+    # Try to send the welcome email, but do NOT fail signup if it errors
+    try:
+        send_welcome_email(data.email, data.name)
+    except Exception as e:
+        logger.warning(f"Welcome email failed for {data.email}: {e}")
+
+    return BaseResponse(success=True, message="User created.", data=None)
 
 @router.post("/signin", response_model=DataResponse[dict])
 async def signin(data: SignInRequest):

@@ -37,7 +37,6 @@ async def test_background():
 # Initialize the plan generator service
 plan_generator = PlanGeneratorService()
 
-
 @router.post("/generate_preview")
 def generate_plan_preview(
     data: PhasePlanRequest,
@@ -208,12 +207,12 @@ def save_training_plan(
             "route_name": plan_data.get("route_name", ""),
             "grade": plan_data.get("grade", ""),
             "route_overview": plan_data.get("route_overview", ""),
-            "training_overview": plan_data.get("training_overview", "")
+            "training_overview": plan_data.get("training_overview", ""),
+            "phases": plan_data.get("phases", []),
         }
-        phases = plan_data.get("phases", [])
 
-        # Save the plan
-        result = db.create_training_plan(user_id, plan_info, phases)
+        # Save the plan (now only 2 args)
+        result = db.create_training_plan(user_id, plan_info)
         if not result:
             raise HTTPException(status_code=400, detail=result.message)
 

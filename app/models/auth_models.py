@@ -36,7 +36,7 @@ class ResetPasswordRequest(BaseModel):
 class BaseResponse(BaseModel):
     success: bool
     message: str
-    data: Optional[T]
+    data: Optional[T] = None
 
 class DataResponse(BaseResponse, BaseModel, Generic[T]):
     data: T

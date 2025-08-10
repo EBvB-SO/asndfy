@@ -943,6 +943,26 @@ def create_training_plan(user_id: str, plan_data: Dict[str, Any]) -> DBResult:
             logger.error(f"Error creating training plan: {e}")
             return DBResult(False, f"Error creating training plan: {e}")
 
+def get_user_training_plans(user_id: str) -> List[Dict[str, Any]]:
+    """Return a simple list of training plans for a user."""
+    with get_db_session() as db:
+        try:
+            plans = db.query(TrainingPlan).filter(TrainingPlan.user_id == user_id).all()
+            out: List[Dict[str, Any]] = []
+            for p in plans:
+                out.append({
+                    "id": p.id,
+                    "user_id": p.user_id,
+                    "route_name": p.route_name,
+                    "grade": p.grade,
+                    "route_overview": p.route_overview,
+                    "training_overview": p.training_overview,
+                    "purchased_at": p.purchased_at.isoformat() if p.purchased_at else None,
+                })
+            return out
+        except Exception as e:
+            logger.error(f"Error fetching plans for user {user_id}: {e}")
+            return []
 
 def get_training_plan(plan_id: str) -> Optional[Dict[str, Any]]:
     """
