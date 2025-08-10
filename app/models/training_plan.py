@@ -1,6 +1,7 @@
 # app/models/training_plan.py
 from pydantic import BaseModel, Field
 from typing import List, Optional
+from datetime import datetime
 
 class PlanSessionBase(BaseModel):
     day: str
@@ -75,4 +76,4 @@ class TrainingPlanCreate(TrainingPlanBase):
 class TrainingPlan(TrainingPlanBase):
     id: str
     user_id: str
-    purchased_at: str
+    purchased_at: datetime

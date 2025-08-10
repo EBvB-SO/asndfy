@@ -969,7 +969,8 @@ def get_user_training_plans(user_id: str) -> List[Dict[str, Any]]:
                     "grade": p.grade,
                     "route_overview": p.route_overview,
                     "training_overview": p.training_overview,
-                    "purchased_at": p.purchased_at.isoformat() if p.purchased_at else None,
+                    # Return datetime directly, let FastAPI/Pydantic handle serialization
+                    "purchased_at": p.purchased_at if p.purchased_at else None,
                 })
             return out
         except Exception as e:
@@ -993,7 +994,7 @@ def get_training_plan(plan_id: str) -> Optional[Dict[str, Any]]:
                 "grade": plan.grade,
                 "route_overview": plan.route_overview,
                 "training_overview": plan.training_overview,
-                "purchased_at": plan.purchased_at.isoformat(),
+                "purchased_at": plan.purchased_at,
                 "phases": [],
             }
 
