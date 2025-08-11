@@ -38,6 +38,11 @@ class ProjectUpdate(BaseModel):
     is_completed: Optional[bool] = None
     completion_date: Optional[str] = None
 
+class ProjectLogUpdate(BaseModel):
+    date: Optional[str] = None
+    content: Optional[str] = None
+    mood: Optional[str] = None
+
 class Project(ProjectBase):
     id: str
     user_id: str
