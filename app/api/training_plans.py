@@ -21,6 +21,37 @@ from app.api._background import generate_plan_background
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/training_plans", tags=["Training Plans"])
 
+def ensure_profile_complete(email: str):
+    """
+    Raise an HTTPException if the user's core profile fields are missing.
+    We consider current_climbing_grade, max_boulder_grade, and goal as required.
+    """
+    with db.get_db_connection() as conn:
+        cursor = conn.cursor()
+        # Join users and user_profiles to find the profile by email
+        cursor.execute(
+            """
+            SELECT up.current_climbing_grade, up.max_boulder_grade, up.goal
+            FROM users u
+            LEFT JOIN user_profiles up ON up.user_id = u.id
+            WHERE u.email = ?
+            """,
+            (email,)
+        )
+        row = cursor.fetchone()
+        # No profile row or missing fields → reject
+        if not row:
+            raise HTTPException(
+                status_code=400,
+                detail="Profile incomplete – please fill in the questionnaire."
+            )
+        for field in ["current_climbing_grade", "max_boulder_grade", "goal"]:
+            if not row.get(field):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Profile incomplete – please fill in the questionnaire."
+                )
+
 @router.get("/test")
 def test_endpoint():
     logger.info("Test endpoint hit!")
@@ -40,8 +71,9 @@ plan_generator = PlanGeneratorService()
 @router.post("/generate_preview")
 def generate_plan_preview(
     data: PhasePlanRequest,
-    current_user: str = Depends(get_current_user_email)  # require valid JWT
+    current_user: str = Depends(get_current_user_email)
 ):
+    ensure_profile_complete(current_user)
     """Generate a lightweight preview with route analysis and training approach."""
     print(f"PREVIEW HIT: {data.route}", flush=True)
     import sys

@@ -20,8 +20,11 @@ class PhaseStructureService:
         if not experience_text:
             return 0
         
-        text_lower = experience_text.lower()
-        match = re.search(r'(\d+)\s*(?:year|yr)', text_lower)
+        text_lower = str(experience_text).lower().strip()
+        # numeric-only like "3" or "0.5"
+        if re.fullmatch(r'\d+(?:\.\d+)?', text_lower):
+            return float(text_lower)
+        match = re.search(r'(\d+(?:\.\d+)?)\s*(?:years?|yrs?|y|year|yr)\b', text_lower)
         if match:
             return float(match.group(1))
         

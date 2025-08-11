@@ -625,7 +625,7 @@ Each exercise includes a 'time_required' field that indicates how many minutes i
 
     training_library = {exercises_json},
 
-    "energy_systems_glossery": {{
+    "energy_systems_glossary": {{
         "strength": "Maximum force production capability, developed through bouldering, fingerboarding and campus training...",
         "anaerobic_capacity (An Cap)": "Ability to sustain hard climbing (10-15 move sequences) ...",
         "aerobic_capacity (Aero Cap)": "Ability to climb without getting pumped ...",
@@ -1283,7 +1283,7 @@ Return only JSON with a top‐level structure containing route_overview, trainin
     4. Each session should fit within the time constraint
     5. Follow proper exercise ordering: high intensity → lower intensity
     6. Include appropriate warm-up and cool-down
-    “7. Never combine more than one campus-board or fingerboard exercise in a single session. 
+    7. Never combine more than one campus-board or fingerboard exercise in a single session. 
         If you include a campus-board or fingerboard exercise, the other exercise must be a wall-based exercise 
         (e.g. bouldering, ARC, 4x4s, etc.).
 

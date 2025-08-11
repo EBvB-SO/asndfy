@@ -136,7 +136,7 @@ class ExerciseFilterService:
         
         return weights
     
-    def filter_exercises_enhanced(self, exercises: List[Dict[str, Any]], data: PhasePlanRequest, route_features: Dict[str, Any], phase_type: str, phase_weeks: int) -> List[Dict[str, Any]]:
+    def filter_exercises_enhanced(self, exercises: List[Dict[str, Any]], data: PhasePlanRequest, route_features: Dict[str, Any], phase_type: str | None = None, phase_weeks: int | None = None) -> List[Dict[str, Any]]:
         """
         Enhanced filter with exercise ranking based on route and climber profile.
         Returns exercises filtered and sorted by relevance.
@@ -174,20 +174,22 @@ class ExerciseFilterService:
         # ————————————————
         # AGE RESTRICTION
         # ————————————————
-        raw_age = data.age
-        try:
-            user_age = int(raw_age)
-        except (TypeError, ValueError):
-            user_age = None
+        raw_age = getattr(data, "age", "") or ""
+        m_age = re.search(r'(\d+)', str(raw_age))
+        user_age = int(m_age.group(1)) if m_age else None
         # ————————————————
         # EXPERIENCE LEVEL (years_exp only)
         # ————————————————
 
-        if data.years_experience is not None:
-            years_exp = data.years_experience
+        if getattr(data, "years_experience", None) is not None:
+            years_exp = float(data.years_experience)
         else:
-            m = re.search(r'(\d+)\s*(?:year|yr)', data.training_experience.lower())
-            years_exp = float(m.group(1)) if m else None
+            # Try numeric-only training_experience first
+            if str(data.training_experience).strip().isdigit():
+                years_exp = float(data.training_experience)
+            else:
+                m = re.search(r'(\d+(?:\.\d+)?)\s*(?:years?|yrs?|y|year|yr)\b', str(data.training_experience).lower())
+                years_exp = float(m.group(1)) if m else None
 
         if years_exp is not None:
             if years_exp < 1:
@@ -197,15 +199,15 @@ class ExerciseFilterService:
             else:
                 experience_level = "intermediate"
         else:
-            # fallback keyword parse only if years_exp is missing
-            txt = data.training_experience.lower()
-            if any(t in txt for t in ["beginner","novice","starting","<1 year"]):
+            # fallback keyword parse
+            txt = str(data.training_experience).lower()
+            if any(t in txt for t in ["beginner", "novice", "starting", "<1 year"]):
                 experience_level = "beginner"
-            elif any(t in txt for t in ["advanced","expert","many years"]):
+            elif any(t in txt for t in ["advanced", "expert", "many years"]):
                 experience_level = "advanced"
             else:
                 experience_level = "intermediate"
-        
+                
         # Parse attribute ratings for weaknesses and strengths
         attribute_ratings = self.parse_attribute_ratings(data.attribute_ratings)
         
