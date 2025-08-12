@@ -36,7 +36,6 @@ def _extract_session_date(s: DBSessionTracking) -> Optional[date]:
         pass
     return None
 
-
 # ----------------------- helpers: exercise bucketing ------------------------
 
 _BUCKETS: Dict[str, List[str]] = {
@@ -51,14 +50,12 @@ _BUCKETS: Dict[str, List[str]] = {
     "core": ["core", "plank", "leg raise", "hollow"],
 }
 
-
 def _bucket_for(title_or_notes: str) -> str:
     text = (title_or_notes or "").lower()
     for bucket, needles in _BUCKETS.items():
         if any(n in text for n in needles):
             return bucket
     return "other"
-
 
 # -------------------- helpers: abilities (free-text parsing) ----------------
 
@@ -71,7 +68,6 @@ AXES_6 = [
     "Flexibility",
 ]
 
-# map common labels -> canonical keys we expect from questionnaire
 KEYS = {
     "crimp strength": "crimp",
     "crimp": "crimp",
@@ -79,13 +75,12 @@ KEYS = {
     "pinch": "pinch",
     "pocket strength": "pocket",
     "pocket": "pocket",
-    "finger strength": "finger_strength",  # explicit finger score (if present)
+    "finger strength": "finger_strength",
     "power": "power",
     "power endurance": "power_endurance",
     "endurance": "endurance",
     "core strength": "core_strength",
     "flexibility": "flexibility",
-    # occasionally present; not part of radar but kept for completeness
     "upper body strength": "upper_body_strength",
     "strength": "strength",
     "mental strength": "mental_strength",
@@ -93,20 +88,10 @@ KEYS = {
 
 PAIR_RE = re.compile(r"\s*([A-Za-z ]+?)\s*:\s*([0-9]+)\s*")
 
-
 def _parse_attribute_ratings_text(s: str) -> Dict[str, float]:
-    """
-    Accept a free-text string like:
-    "Crimp Strength: 2, Pinch Strength: 2, Pocket Strength: 2, Power: 2, Power Endurance: 4, Endurance: 5, Core Strength: 4, Flexibility: 5"
-    or a JSON dict string like:
-    {"Crimp Strength": 4, "Power": 5, ...}
-    and return a dict of normalized numeric values by canonical key in KEYS.
-    """
     result: Dict[str, float] = {}
     if not s:
         return result
-
-    # If it happens to be valid JSON, just parse it straight away
     try:
         parsed = json.loads(s)
         if isinstance(parsed, dict):
@@ -119,9 +104,7 @@ def _parse_attribute_ratings_text(s: str) -> Dict[str, float]:
                     pass
             return out
     except Exception:
-        pass  # fall back to regex parsing
-
-    # Free text pairs: "Label: number"
+        pass
     for m in PAIR_RE.finditer(s):
         raw_key = m.group(1).strip().lower()
         try:
@@ -134,30 +117,16 @@ def _parse_attribute_ratings_text(s: str) -> Dict[str, float]:
         result[canon] = val
     return result
 
-
 def _six_axis_from_user_fields(user: User) -> Dict[str, Dict[str, float]]:
-    """
-    Build our 6-axis values from either:
-    - JSON columns attribute_ratings_initial/current if present, else
-    - free-text attribute_ratings on User or user.profile (UserProfile), else
-    - individual numeric columns on User (power, endurance, etc.), else zeros.
-    Returns:
-      {"initial": {...6 keys...}, "current": {...6 keys...}}
-    """
-    # 1) If JSON columns exist on the User (or attached profile) use them directly
     abilities_initial = getattr(user, "attribute_ratings_initial", None) or {}
     abilities_current = getattr(user, "attribute_ratings_current", None) or {}
-
-    # 2) If empty, try attribute_ratings (free text) on User or on the attached profile
     if not abilities_current:
         raw = getattr(user, "attribute_ratings", None)
         if not raw:
             profile = getattr(user, "profile", None)
             raw = getattr(profile, "attribute_ratings", None) if profile else None
-
         parsed = _parse_attribute_ratings_text(raw or "")
         if parsed:
-            # Finger Strength = explicit 'finger_strength' if present, else average of crimp/pinch/pocket
             fingers: List[float] = []
             if "finger_strength" in parsed:
                 fingers.append(parsed["finger_strength"])
@@ -165,7 +134,6 @@ def _six_axis_from_user_fields(user: User) -> Dict[str, Dict[str, float]]:
                 if part in parsed:
                     fingers.append(parsed[part])
             finger_strength = sum(fingers) / len(fingers) if fingers else 0.0
-
             out = {
                 "Finger Strength": finger_strength,
                 "Power": float(parsed.get("power", 0.0)),
@@ -177,19 +145,14 @@ def _six_axis_from_user_fields(user: User) -> Dict[str, Dict[str, float]]:
             abilities_current = out
             if not abilities_initial:
                 abilities_initial = out
-
-    # 3) Align and return
     def _align6(d: Dict[str, float]) -> Dict[str, float]:
         return {k: float(d.get(k, 0.0)) for k in AXES_6}
-
     return {
         "initial": _align6(abilities_initial or {}),
         "current": _align6(abilities_current or {}),
     }
 
-
 # --------------------------------- route ------------------------------------
-
 
 @router.get("/{email}", summary="Return dashboard data for a user")
 async def get_dashboard(
@@ -199,26 +162,19 @@ async def get_dashboard(
 ):
     if email.lower() != current_user.lower():
         raise HTTPException(status_code=403, detail="Unauthorized")
-
     user = db.query(User).filter(User.email == email).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-
-    # Ensure the helper can see attribute_ratings even if profile isn't eagerly loaded
     try:
         profile = db.query(UserProfile).filter(UserProfile.user_id == user.id).first()
         if profile is not None and not getattr(user, "attribute_ratings", None):
-            # only attach if the model actually supports arbitrary attrs or has relationship
-            # this is safe: SQLAlchemy models can hold transient attributes
             setattr(user, "profile", profile)
     except Exception:
-        # non-fatal; continue without profile
         pass
 
     today = datetime.utcnow().date()
     start_date = today - timedelta(weeks=8)
 
-    # 1) Session completion by week (last 8 weeks)
     sessions_q = db.query(DBSessionTracking).filter(DBSessionTracking.user_id == user.id).all()
     sessions_window: List[Tuple[DBSessionTracking, date]] = []
     for s in sessions_q:
@@ -226,28 +182,24 @@ async def get_dashboard(
         if d and start_date <= d <= today:
             sessions_window.append((s, d))
 
-    completion_by_week: List[Dict[str, float | int | str]] = []
+    completion_by_week = []
     for i in range(8):
         wk_start = start_date + timedelta(weeks=i)
         wk_end = wk_start + timedelta(days=6)
-        wk_sessions = [s for (s, d) in sessions_window if wk_start <= d <= wk_end]
+        wk_sessions = [(s, d) for (s, d) in sessions_window if wk_start <= d <= wk_end]
         total = len(wk_sessions)
         completed = sum(1 for (s, _) in wk_sessions if getattr(s, "is_completed", False))
         rate = (completed / total * 100.0) if total else 0.0
-        completion_by_week.append(
-            {
-                "weekLabel": f"Week {i+1}",
-                "completedSessions": completed,
-                "completionRate": round(rate, 2),
-            }
-        )
+        completion_by_week.append({
+            "weekLabel": f"Week {i+1}",
+            "completedSessions": completed,
+            "completionRate": round(rate, 2),
+        })
 
-    # 2) Abilities (6-axis)
     six = _six_axis_from_user_fields(user)
     abilities_initial = six["initial"]
     abilities_current = six["current"]
 
-    # 3) Exercise distribution (simple bucketing over all tracking rows)
     ex_rows = db.query(DBExerciseTracking).filter(DBExerciseTracking.user_id == user.id).all()
     buckets: Dict[str, int] = {}
     for ex in ex_rows:
