@@ -12,6 +12,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.core.redis import redis_client
+from app.api.analytics import router as analytics_router
 
 # Load .env into os.environ
 load_dotenv()
@@ -65,6 +66,8 @@ app = FastAPI(
     version     = "2.0.0",
     description = "API for personalized climbing training plans"
 )
+
+app.include_router(analytics_router, tags=["Analytics"])
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
