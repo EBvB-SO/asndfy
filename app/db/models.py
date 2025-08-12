@@ -1,5 +1,5 @@
 # db/models.py
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, Float, Index, CheckConstraint, Date
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, Float, Index, CheckConstraint, Date, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -19,6 +19,10 @@ class User(Base):
     created_at    = Column(DateTime(timezone=True), server_default=func.now())
     last_login    = Column(DateTime(timezone=True), nullable=True)
 
+    # Quick-read snapshots for abilities (6-axis JSON)
+    attribute_ratings_initial = Column(JSON, nullable=True)   # one-time snapshot
+    attribute_ratings_current = Column(JSON, nullable=True)   # most recent
+
     # Relationships
     profile            = relationship("UserProfile",    back_populates="user", cascade="all, delete-orphan", uselist=False)
     projects           = relationship("Project",        back_populates="user", cascade="all, delete-orphan")
@@ -28,6 +32,13 @@ class User(Base):
     session_tracking   = relationship("SessionTracking",back_populates="user", cascade="all, delete-orphan")
     exercise_tracking  = relationship("ExerciseTracking", back_populates="user", cascade="all, delete-orphan")
     exercise_entries   = relationship("ExerciseEntry",  back_populates="user", cascade="all, delete-orphan")
+
+    # NEW: time-series history of ability updates
+    attribute_ratings_history = relationship(
+        "UserAttributeRatingsHistory",
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )
 
 class UserProfile(Base):
     __tablename__ = 'user_profiles'
@@ -68,6 +79,31 @@ class UserProfile(Base):
     
     # Relationships
     user = relationship("User", back_populates="profile")
+
+class UserAttributeRatingsHistory(Base):
+    __tablename__ = 'user_attribute_ratings_history'
+
+    id          = Column(Integer, primary_key=True, index=True)
+    user_id     = Column(String(36), ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    recorded_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # Store the resolved 6-axis map, e.g.:
+    # {
+    #   "Finger Strength": 4.0, "Power": 3.0, "Power Endurance": 2.0,
+    #   "Endurance": 5.0, "Core Strength": 4.0, "Flexibility": 3.0
+    # }
+    ratings     = Column(JSON, nullable=False)
+
+    # Optional: where the change came from (e.g. "questionnaire")
+    source      = Column(String(100), nullable=True)
+
+    # Relationship
+    user = relationship("User", back_populates="attribute_ratings_history")
+
+    __table_args__ = (
+        Index('idx_user_attr_hist_user_id', 'user_id'),
+        Index('idx_user_attr_hist_recorded_at', 'recorded_at'),
+    )
 
 # Project related models
 class Project(Base):
