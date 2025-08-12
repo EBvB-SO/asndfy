@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, date
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
+import re
 import json
 
 from fastapi import APIRouter, HTTPException, Depends
@@ -12,20 +13,16 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user_email
 from app.db.models import (
     User,
-    UserProfile,
     SessionTracking as DBSessionTracking,
     ExerciseTracking as DBExerciseTracking,
 )
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
 
-# ---------------------------- helpers --------------------------------- #
+# --------------------------- helpers: sessions ------------------------------
 
-def _extract_session_date(s: DBSessionTracking) -> date | None:
-    """
-    Prefer completion_date; else updated_at/created_at -> date(); else None.
-    Handles both datetime and date objects defensively.
-    """
+def _extract_session_date(s: DBSessionTracking) -> Optional[date]:
+    """Prefer completion_date; else updated_at/created_at -> date(); else None."""
     try:
         if getattr(s, "completion_date", None):
             cd = s.completion_date
@@ -38,8 +35,8 @@ def _extract_session_date(s: DBSessionTracking) -> date | None:
         pass
     return None
 
+# ----------------------- helpers: exercise bucketing ------------------------
 
-# If you do not persist an exercise "type", map from title/notes keywords.
 _BUCKETS: Dict[str, List[str]] = {
     "finger strength": ["finger", "hangboard", "fingerboard", "max hang", "half crimp", "open hand"],
     "strength":        ["strength", "weighted pull", "one arm", "lockoff"],
@@ -59,33 +56,148 @@ def _bucket_for(title_or_notes: str) -> str:
             return bucket
     return "other"
 
+# -------------------- helpers: abilities (free-text parsing) ----------------
 
-# ----------------------------- route ---------------------------------- #
+AXES_6 = [
+    "Finger Strength",
+    "Power",
+    "Power Endurance",
+    "Endurance",
+    "Core Strength",
+    "Flexibility",
+]
+
+# map common labels -> canonical keys we expect from questionnaire
+KEYS = {
+    "crimp strength": "crimp",
+    "crimp": "crimp",
+    "pinch strength": "pinch",
+    "pinch": "pinch",
+    "pocket strength": "pocket",
+    "pocket": "pocket",
+    "finger strength": "finger_strength",   # explicit finger score (if present)
+
+    "power": "power",
+    "power endurance": "power_endurance",
+    "endurance": "endurance",
+    "core strength": "core_strength",
+    "flexibility": "flexibility",
+
+    # we see these sometimes; we won’t map them unless useful
+    "upper body strength": "upper_body_strength",
+    "strength": "strength",
+    "mental strength": "mental_strength",
+}
+
+PAIR_RE = re.compile(r"\s*([A-Za-z ]+?)\s*:\s*([0-9]+)\s*")
+
+def _parse_attribute_ratings_text(s: str) -> Dict[str, float]:
+    """
+    Accept a free-text string like:
+    "Crimp Strength: 2, Pinch Strength: 2, Pocket Strength: 2, Power: 2, Power Endurance: 4, Endurance: 5, Core Strength: 4, Flexibility: 5"
+    and return a dict of normalized numeric values by canonical key in KEYS.
+    """
+    result: Dict[str, float] = {}
+    if not s:
+        return result
+
+    # If it happens to be valid JSON, just parse it straight away
+    try:
+        parsed = json.loads(s)
+        if isinstance(parsed, dict):
+            # normalize keys through KEYS if possible
+            out: Dict[str, float] = {}
+            for k, v in parsed.items():
+                kk = KEYS.get(k.strip().lower(), k.strip().lower())
+                try:
+                    out[kk] = float(v)
+                except Exception:
+                    pass
+            return out
+    except Exception:
+        pass  # fall back to regex parsing
+
+    # Free text pairs: "Label: number"
+    for m in PAIR_RE.finditer(s):
+        raw_key = m.group(1).strip().lower()
+        try:
+            val = float(m.group(2))
+        except Exception:
+            continue
+        canon = KEYS.get(raw_key)
+        if not canon:
+            continue
+        result[canon] = val
+    return result
+
+def _six_axis_from_user_fields(user: User) -> Dict[str, float]:
+    """
+    Build our 6-axis values from either:
+    - JSON columns attribute_ratings_initial/current if present, else
+    - free-text UserProfile.attribute_ratings (string), else
+    - individual numeric columns on User (power, endurance, etc.), else {}
+    """
+    # 1) If JSON columns exist on the User (or attached profile) use them directly
+    abilities_initial = getattr(user, "attribute_ratings_initial", None) or {}
+    abilities_current = getattr(user, "attribute_ratings_current", None) or {}
+
+    # 2) If empty, try attribute_ratings (free text) on UserProfile or User
+    if not abilities_current:
+        raw = getattr(user, "attribute_ratings", None)
+        if not raw:
+            # some schemas keep attribute_ratings on a UserProfile row
+            profile = getattr(user, "profile", None)
+            raw = getattr(profile, "attribute_ratings", None) if profile else None
+        parsed = _parse_attribute_ratings_text(raw or "")
+        if parsed:
+            # Finger Strength = explicit 'finger_strength' if present, else average of crimp/pinch/pocket
+            fingers: List[float] = []
+            if "finger_strength" in parsed:
+                fingers.append(parsed["finger_strength"])
+            for part in ("crimp", "pinch", "pocket"):
+                if part in parsed:
+                    fingers.append(parsed[part])
+            finger_strength = sum(fingers) / len(fingers) if fingers else 0.0
+
+            out = {
+                "Finger Strength": finger_strength,
+                "Power":           float(parsed.get("power", 0.0)),
+                "Power Endurance": float(parsed.get("power_endurance", 0.0)),
+                "Endurance":       float(parsed.get("endurance", 0.0)),
+                "Core Strength":   float(parsed.get("core_strength", 0.0)),
+                "Flexibility":     float(parsed.get("flexibility", 0.0)),
+            }
+            abilities_current = out
+            if not abilities_initial:
+                abilities_initial = out
+
+    # 3) Align and return
+    def _align6(d: Dict[str, float]) -> Dict[str, float]:
+        return {k: float(d.get(k, 0.0)) for k in AXES_6}
+
+    return {
+        "initial": _align6(abilities_initial or {}),
+        "current": _align6(abilities_current or {}),
+    }
+
+# --------------------------------- route ------------------------------------
 
 @router.get("/{email}", summary="Return dashboard data for a user")
-async def get_dashboard(
-    email: str,
-    current_user: str = Depends(get_current_user_email),
-    db: Session = Depends(get_db),
-):
-    # ---- auth ---------------------------------------------------------- #
+async def get_dashboard(email: str,
+                        current_user: str = Depends(get_current_user_email),
+                        db: Session = Depends(get_db)):
     if email.lower() != current_user.lower():
         raise HTTPException(status_code=403, detail="Unauthorized")
 
-    user: User | None = db.query(User).filter(User.email == email).first()
+    user = db.query(User).filter(User.email == email).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # ---- 1) Session completion (last 8 weeks) ------------------------- #
     today = datetime.utcnow().date()
     start_date = today - timedelta(weeks=8)
 
-    sessions_q: List[DBSessionTracking] = (
-        db.query(DBSessionTracking)
-        .filter(DBSessionTracking.user_id == user.id)
-        .all()
-    )
-
+    # 1) Session completion by week (last 8 weeks)
+    sessions_q = db.query(DBSessionTracking).filter(DBSessionTracking.user_id == user.id).all()
     sessions_window: List[Tuple[DBSessionTracking, date]] = []
     for s in sessions_q:
         d = _extract_session_date(s)
@@ -97,91 +209,30 @@ async def get_dashboard(
         wk_start = start_date + timedelta(weeks=i)
         wk_end = wk_start + timedelta(days=6)
         wk_sessions = [s for (s, d) in sessions_window if wk_start <= d <= wk_end]
-
         total = len(wk_sessions)
         completed = sum(1 for (s, _) in wk_sessions if getattr(s, "is_completed", False))
         rate = (completed / total * 100.0) if total else 0.0
+        completion_by_week.append({
+            "weekLabel": f"Week {i+1}",
+            "completedSessions": completed,
+            "completionRate": round(rate, 2),
+        })
 
-        completion_by_week.append(
-            {
-                "weekLabel": f"Week {i + 1}",
-                "completedSessions": completed,
-                "completionRate": round(rate, 2),
-            }
-        )
+    # 2) Abilities (6-axis)
+    six = _six_axis_from_user_fields(user)
+    abilities_initial = six["initial"]
+    abilities_current = six["current"]
 
-    # ---- 2) Abilities (6-axis radar) ---------------------------------- #
-    ORDERED_ABILITY_LABELS = [
-        "Finger Strength",
-        "Power",
-        "Power Endurance",
-        "Endurance",
-        "Core Strength",
-        "Flexibility",
-    ]
-
-    def _num(v) -> float | None:
-        if isinstance(v, (int, float)):
-            return float(v)
-        if isinstance(v, str):
-            try:
-                return float(v.strip())
-            except Exception:
-                return None
-        return None
-
-    # Pull questionnaire from UserProfile.attribute_ratings (JSON string)
-    profile: UserProfile | None = db.query(UserProfile).filter(UserProfile.user_id == user.id).first()
-    current_from_profile: Dict[str, float] = {}
-
-    if profile and profile.attribute_ratings:
-        try:
-            raw = json.loads(profile.attribute_ratings)  # keys from your questionnaire
-        except Exception:
-            raw = {}
-
-        # Components for finger strength
-        crimp  = _num(raw.get("crimp_strength"))   or 0.0
-        pinch  = _num(raw.get("pinch_strength"))   or 0.0
-        pocket = _num(raw.get("pocket_strength"))  or 0.0
-        denom = max(1, sum(x > 0 for x in (crimp, pinch, pocket)))
-        finger_strength = (crimp + pinch + pocket) / denom
-
-        current_from_profile = {
-            "Finger Strength":  finger_strength,
-            "Power":            _num(raw.get("power"))            or 0.0,
-            "Power Endurance":  _num(raw.get("power_endurance"))  or 0.0,
-            "Endurance":        _num(raw.get("endurance"))        or 0.0,
-            "Core Strength":    _num(raw.get("core_strength"))    or 0.0,
-            "Flexibility":      _num(raw.get("flexibility"))      or 0.0,
-        }
-
-    # Prefer first-class JSON columns on User if you added them; otherwise use profile values
-    abilities_initial: Dict[str, float] = getattr(user, "attribute_ratings_initial", None) or {}
-    abilities_current: Dict[str, float] = getattr(user, "attribute_ratings_current", None) or current_from_profile
-
-    # If still empty, return zeros (no hard-coded demo values)
-    if not abilities_current:
-        abilities_current = {k: 0.0 for k in ORDERED_ABILITY_LABELS}
-    if not abilities_initial:
-        abilities_initial = abilities_current  # until you snapshot an "initial" baseline
-
-    # Ensure exact order and float values
-    abilities_initial = {k: float(abilities_initial.get(k, 0.0)) for k in ORDERED_ABILITY_LABELS}
-    abilities_current = {k: float(abilities_current.get(k, 0.0)) for k in ORDERED_ABILITY_LABELS}
-
-    # ---- 3) Exercise distribution ------------------------------------- #
-    ex_rows: List[DBExerciseTracking] = (
+    # 3) Exercise distribution (simple bucketing over all tracking rows)
+    ex_rows = (
         db.query(DBExerciseTracking)
-        .filter(DBExerciseTracking.user_id == user.id)
-        .all()
+          .filter(DBExerciseTracking.user_id == user.id)
+          .all()
     )
-
     buckets: Dict[str, int] = {}
     for ex in ex_rows:
         ex_type = getattr(ex, "exercise_type", None)
         if not ex_type:
-            # derive from title/notes if no explicit type field exists
             text = ""
             for attr in ("exercise_title", "title", "notes"):
                 val = getattr(ex, attr, None)
@@ -196,14 +247,17 @@ async def get_dashboard(
         {
             "type": k,
             "count": v,
-            "percentage": round((v / total_sessions * 100.0), 2) if total_sessions else 0.0,
+            "percentage": round((v / total_sessions * 100.0), 2) if total_sessions else 0.0
         }
         for k, v in sorted(buckets.items(), key=lambda kv: -kv[1])
     ]
 
-    # ---- response ------------------------------------------------------ #
     return {
         "sessionCompletion": completion_by_week,
-        "abilities": {"initial": abilities_initial, "current": abilities_current},
-        "exerciseDistribution": exercise_distribution,
+        "abilities": {
+            "initial": abilities_initial,
+            "current": abilities_current
+        },
+        "exerciseDistribution": exercise_distribution
     }
+
