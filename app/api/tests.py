@@ -12,24 +12,16 @@ from app.core.database import get_db
 
 router = APIRouter(prefix="/tests", tags=["Tests"])
 
-# List all available tests
 @router.get("/", response_model=List[TestDefinition])
 def list_tests(db: Session = Depends(get_db)):
     return db.query(DBTestDefinition).all()
 
-# (Optional) create a new test definition – could be restricted to admin
-@router.post("/", response_model=TestDefinition)
-def create_test_definition(
-    payload: TestDefinitionCreate,
-    db: Session = Depends(get_db)
-):
+@router.post("/", response_model=TestDefinition, status_code=201)
+def create_test_definition(payload: TestDefinitionCreate, db: Session = Depends(get_db)):
     db_test = DBTestDefinition(**payload.dict())
-    db.add(db_test)
-    db.commit()
-    db.refresh(db_test)
+    db.add(db_test); db.commit(); db.refresh(db_test)
     return db_test
 
-# Get all results for a particular user and test
 @router.get("/users/{email}/{test_id}/results", response_model=List[TestResult])
 def get_user_test_results(
     email: str,
@@ -39,23 +31,22 @@ def get_user_test_results(
 ):
     if email.lower() != current_user.lower():
         raise HTTPException(403, "Unauthorized")
-    user = db.query(User).filter(User.email == current_user).first()
-    return [
-        TestResult(
-            id=res.id,
-            test_id=res.test_id,
-            date=res.date,
-            value=res.value,
-            notes=res.notes
-        )
-        for res in db.query(DBTestResult).filter(
-            DBTestResult.user_id == user.id,
-            DBTestResult.test_id == test_id
-        ).order_by(DBTestResult.date.asc()).all()
-    ]
 
-# Record a new test result
-@router.post("/users/{email}/{test_id}/results", response_model=TestResult)
+    user = db.query(User).filter(User.email == current_user).first()
+    if not user:
+        return []                    # <- never an empty body
+
+    rows = (
+        db.query(DBTestResult)
+        .filter(DBTestResult.user_id == user.id, DBTestResult.test_id == test_id)
+        .order_by(DBTestResult.date.asc())
+        .all()
+    )
+
+    # You can return ORM rows directly because TestResult.Config.orm_mode = True.
+    return rows
+
+@router.post("/users/{email}/{test_id}/results", response_model=TestResult, status_code=201)
 def create_test_result(
     email: str,
     test_id: int,
@@ -65,21 +56,17 @@ def create_test_result(
 ):
     if email.lower() != current_user.lower():
         raise HTTPException(403, "Unauthorized")
+
     user = db.query(User).filter(User.email == current_user).first()
+    if not user:
+        raise HTTPException(404, "User not found")
+
     db_result = DBTestResult(
         user_id=user.id,
         test_id=test_id,
-        date=payload.date,
+        date=payload.date,   # DATE column — good
         value=payload.value,
         notes=payload.notes
     )
-    db.add(db_result)
-    db.commit()
-    db.refresh(db_result)
-    return TestResult(
-        id=db_result.id,
-        test_id=db_result.test_id,
-        date=db_result.date,
-        value=db_result.value,
-        notes=db_result.notes
-    )
+    db.add(db_result); db.commit(); db.refresh(db_result)
+    return db_result         # FastAPI serializes date -> "YYYY-MM-DD"
