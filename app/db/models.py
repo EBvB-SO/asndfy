@@ -32,6 +32,7 @@ class User(Base):
     session_tracking   = relationship("SessionTracking",back_populates="user", cascade="all, delete-orphan")
     exercise_tracking  = relationship("ExerciseTracking", back_populates="user", cascade="all, delete-orphan")
     exercise_entries   = relationship("ExerciseEntry",  back_populates="user", cascade="all, delete-orphan")
+    test_results       = relationship("TestResult", back_populates="user", cascade="all, delete-orphan")
 
     # NEW: time-series history of ability updates
     attribute_ratings_history = relationship(
@@ -345,6 +346,35 @@ class DailyNote(Base):
         Index('idx_daily_notes_user_id', 'user_id'),
         Index('idx_daily_notes_date', 'date'),
     )
+
+# --- TestDefinition ---
+class TestDefinition(Base):
+    __tablename__ = "test_definitions"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    name        = Column(String(100), unique=True, nullable=False)
+    description = Column(Text, nullable=True)
+    # exercises.id is INTEGER in your DB
+    exercise_id = Column(Integer, ForeignKey('exercises.id', ondelete='SET NULL'), nullable=True)
+    unit        = Column(String(50), nullable=True)
+
+    results = relationship("TestResult", back_populates="test", cascade="all, delete-orphan")
+
+# --- TestResult ---
+class TestResult(Base):
+    __tablename__ = "test_results"
+
+    id        = Column(Integer, primary_key=True, index=True)
+    # users.id is VARCHAR(36) in your DB
+    user_id   = Column(String(36), ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    test_id   = Column(Integer, ForeignKey('test_definitions.id', ondelete='CASCADE'), nullable=False)
+    date      = Column(Date, nullable=False)
+    value     = Column(Float, nullable=False)
+    notes     = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="test_results")
+    test = relationship("TestDefinition", back_populates="results")
 
 # Database version tracking
 class DBVersion(Base):

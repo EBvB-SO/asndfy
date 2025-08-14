@@ -59,6 +59,8 @@ from app.api.badges               import router as badges_router
 from app.api.sessions             import router as sessions_router
 from app.api.exercise_tracking    import router as exercise_tracking_router
 from app.api.exercise_history     import router as history_router
+from app.api.tests                import router as tests_router
+
 
 # --- Create FastAPI app ---
 app = FastAPI(
@@ -136,6 +138,7 @@ app.include_router(badges_router,             tags=["Badges"])
 app.include_router(sessions_router,           tags=["Session Tracking"])
 app.include_router(exercise_tracking_router,  tags=["Exercise Tracking"])
 app.include_router(history_router,            tags=["Exercise History"])
+app.include_router(tests_router,              tags=["Tests"])
 
 # --- Startup event: migrations, Redis, env var checks ---
 # Replace your entire startup_event function with this improved version:
