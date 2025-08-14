@@ -1,8 +1,12 @@
 # app/models/test.py
-from pydantic import BaseModel
 from datetime import date
 from typing import Optional
+from pydantic import BaseModel
 
+
+# ----------------------------
+# Test definitions
+# ----------------------------
 class TestDefinitionBase(BaseModel):
     name: str
     description: Optional[str] = None
@@ -16,10 +20,14 @@ class TestDefinition(TestDefinitionBase):
     id: int
 
     class Config:
-        orm_mode = True
+        orm_mode = True  # Pydantic v1; for v2 use: model_config = ConfigDict(from_attributes=True)
 
+
+# ----------------------------
+# Test results
+# ----------------------------
 class TestResultBase(BaseModel):
-    date: date
+    date: date           # "yyyy-mm-dd"
     value: float
     notes: Optional[str] = None
 
