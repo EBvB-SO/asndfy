@@ -68,6 +68,8 @@ async def get_sessions(
         for s in sessions
     ]
 
+# app/api/sessions.py
+
 @router.post("/initialize", response_model=Dict[str, Any])
 async def initialize_sessions(
     email: str,
@@ -75,100 +77,95 @@ async def initialize_sessions(
     current_user: str = Depends(get_current_user_email),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
-    """Bootstrap tracking sessions for each week/day in a plan."""
+    """
+    Create server-side SessionTracking rows for a plan from the plan's weekly_schedule.
+    Idempotent: if rows already exist for this user+plan, it returns a 'already initialised' message.
+    """
+    # 1) AuthN/AuthZ
     if email != current_user:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
+    # 2) Resolve user
     user = db.query(User).filter(User.email == email).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    planId = planId.lower()
+    plan_id = planId.lower()
 
-    already = (
+    # 3) Find the plan (must belong to this user)
+    plan = (
+        db.query(TrainingPlan)
+        .filter(
+            TrainingPlan.id == plan_id,
+            TrainingPlan.user_id == user.id,
+        )
+        .first()
+    )
+    if not plan or not plan.phases:
+        raise HTTPException(status_code=404, detail="Training plan not found or has no phases")
+
+    # 4) If we already have sessions for this user+plan, do nothing
+    existing_count = (
         db.query(DBSessionTracking)
         .filter(
             DBSessionTracking.user_id == user.id,
-            DBSessionTracking.plan_id == planId,
+            DBSessionTracking.plan_id == plan_id,
         )
         .count()
     )
-    if already > 0:
-        logger.info(f"Sessions already exist for plan {planId} ({already} sessions)")
-        return {"success": True, "message": "Sessions already initialized"}
+    if existing_count > 0:
+        return {"success": True, "message": "Sessions already initialised", "created": 0}
 
-    try:
-        existing_plan = db.query(TrainingPlan).filter(
-            TrainingPlan.id == planId,
-            TrainingPlan.user_id == user.id,
-        ).first()
+    # 5) Create sessions from weekly_schedule
+    created_rows: list[DBSessionTracking] = []
+    now = datetime.utcnow()
 
-        if not existing_plan:
-            logger.warning(f"Plan {planId} not found, creating minimal plan")
-            minimal_plan = TrainingPlan(
-                id=planId,
-                user_id=user.id,
-                route_name="Local Training Plan",
-                grade="Unknown",
-                route_overview="Auto-created for session tracking",
-                training_overview="This plan was auto-created from iOS app session data.",
-            )
-            db.add(minimal_plan)
-            db.flush()
+    # Each plan.phase is expected to expose:
+    #   phase.week_start (int), phase.week_end (int), phase.weekly_schedule (list of {"day","focus"})
+    # If your DB stores JSON strings, ensure .phases is already a parsed structure (your codebase suggests it is).
+    for phase in plan.phases:
+        # Defensive checks in case of malformed data
+        week_start = getattr(phase, "week_start", None)
+        week_end = getattr(phase, "week_end", None)
+        schedule = getattr(phase, "weekly_schedule", None)
+        if not isinstance(week_start, int) or not isinstance(week_end, int) or not isinstance(schedule, list):
+            continue  # skip bad phase safely
 
-        created: List[Dict[str, Any]] = []
+        for week_num in range(week_start, week_end + 1):
+            for day in schedule:
+                day_name = (day.get("day") or "").strip()
+                focus = (day.get("focus") or "").strip()
+                if not day_name or not focus:
+                    continue
 
-        weeks_data = [
-            (1, 4, "Base Building"),
-            (5, 8, "Strength Focus"),
-            (9, 12, "Power Development"),
-        ]
-
-        for start_week, end_week, phase_name in weeks_data:
-            session_templates = [
-                ("Monday", "Strength Training"),
-                ("Wednesday", "Technique Work"),
-                ("Friday", "Power Development"),
-            ]
-            for week in range(start_week, end_week + 1):
-                for day, focus in session_templates:
-                    new_s = DBSessionTracking(
+                created_rows.append(
+                    DBSessionTracking(
                         id=str(uuid.uuid4()).lower(),
                         user_id=user.id,
-                        plan_id=planId,
-                        week_number=week,
-                        day_of_week=day,
-                        focus_name=f"{focus} - {phase_name}",
+                        plan_id=plan_id,
+                        week_number=week_num,
+                        day_of_week=day_name,           # e.g. "Monday"
+                        focus_name=focus,               # e.g. "Max Boulder Sessions + Density Hangs"
                         is_completed=False,
                         notes="",
-                        created_at=datetime.utcnow(),
-                        updated_at=datetime.utcnow(),
+                        created_at=now,
+                        updated_at=now,
                     )
-                    db.add(new_s)
-                    created.append(
-                        {
-                            "id": new_s.id,
-                            "planId": planId,
-                            "weekNumber": week,
-                            "dayOfWeek": day,
-                            "focusName": f"{focus} - {phase_name}",
-                            "isCompleted": False,
-                            "notes": "",
-                        }
-                    )
+                )
 
-        db.commit()
-        logger.info(f"Created {len(created)} sessions for plan {planId}")
-        return {
-            "success": True,
-            "message": f"Created {len(created)} sessions",
-            "sessions": created,
-        }
+    # 6) Persist
+    if not created_rows:
+        # Nothing to create — better to tell the client the plan contained no valid schedule
+        raise HTTPException(status_code=422, detail="Plan has no valid weekly schedule to create sessions from")
 
-    except SQLAlchemyError:
-        db.rollback()
-        logger.exception("Failed initializing sessions")
-        raise HTTPException(status_code=500, detail="Could not initialize sessions")
+    db.add_all(created_rows)
+    db.commit()
+
+    return {
+        "success": True,
+        "message": f"Created {len(created_rows)} sessions",
+        "created": len(created_rows),
+    }
 
 class SessionUpdate(BaseModel):
     is_completed: Optional[bool] = Field(
