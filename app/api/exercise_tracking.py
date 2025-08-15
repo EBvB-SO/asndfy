@@ -191,3 +191,48 @@ async def get_exercises(
         )
         for rec in records
     ]
+
+@router.delete("/exercises/{exercise_id}")
+async def delete_exercise(
+    email: str,
+    planId: str,
+    exercise_id: str,
+    current_user: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db),
+):
+    """Delete an exercise tracking record."""
+    if email != current_user:
+        raise HTTPException(403, "Unauthorized")
+
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(404, "User not found")
+
+    planId = planId.lower()
+    exercise_id = exercise_id.lower()
+
+    # Find and delete the exercise record
+    existing_record = db.query(DBExerciseTracking).filter(
+        DBExerciseTracking.id == exercise_id,
+        DBExerciseTracking.user_id == user.id,
+        DBExerciseTracking.plan_id == planId,
+    ).first()
+
+    if not existing_record:
+        raise HTTPException(404, f"Exercise tracking record not found: {exercise_id}")
+
+    try:
+        db.delete(existing_record)
+        db.commit()
+        
+        logger.info(f"✅ Deleted exercise {exercise_id} from plan {planId}")
+        
+        return {
+            "success": True,
+            "message": "Exercise tracking deleted successfully",
+            "deleted_id": exercise_id
+        }
+    except Exception as e:
+        db.rollback()
+        logger.error(f"❌ Error deleting exercise {exercise_id}: {e}")
+        raise HTTPException(500, f"Failed to delete exercise: {str(e)}")
