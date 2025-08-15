@@ -126,17 +126,30 @@ def delete_daily_note(
     note_id: str,
     current_user: str = Depends(get_current_user_email),
     db: Session = Depends(get_db),
-):
-    """Delete a daily note."""
-    if email != current_user:
+) -> dict:
+    """
+    Delete a daily note for the authenticated user.
+
+    Both the path email and the email extracted from the JWT are normalised
+    to lower‑case before comparison.  The route then verifies that a user
+    exists for the given email and that the specified note belongs to that
+    user before deleting it.
+
+    A 403 is returned if the token email does not match the path email.
+    A 404 is returned if either the user or the note cannot be found.
+    """
+    # Normalise e‑mails (handles tokens in lower‑case and mixed‑case paths)
+    email_lower = email.strip().lower()
+    current_lower = current_user.strip().lower() if current_user else None
+    if not current_lower or email_lower != current_lower:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
-    # Get user
-    user = db.query(User).filter(User.email == email).first()
+    # Look up the user using a case‑insensitive search
+    user = db.query(User).filter(User.email.ilike(email_lower)).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Get and verify ownership of the note
+    # Fetch the note, ensuring it belongs to this user
     note = (
         db.query(DBDailyNote)
         .filter(DBDailyNote.id == note_id, DBDailyNote.user_id == user.id)
@@ -145,13 +158,13 @@ def delete_daily_note(
     if not note:
         raise HTTPException(status_code=404, detail="Daily note not found")
 
-    # Delete the note
+    # Delete and commit
     db.delete(note)
-    
     try:
         db.commit()
-        return {"success": True, "message": "Daily note deleted successfully"}
     except Exception as e:
         db.rollback()
         logger.error(f"Error deleting daily note: {e}")
         raise HTTPException(status_code=400, detail="Failed to delete daily note")
+
+    return {"success": True, "message": "Daily note deleted successfully"}
