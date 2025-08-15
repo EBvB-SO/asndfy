@@ -1,6 +1,7 @@
 # app/models/test.py
-from datetime import date
+from __future__ import annotations
 from typing import Optional
+import datetime as dt
 from pydantic import BaseModel
 
 
@@ -27,7 +28,7 @@ class TestDefinition(TestDefinitionBase):
 # Test results
 # ----------------------------
 class TestResultBase(BaseModel):
-    date: date           # "yyyy-mm-dd"
+    date: dt.date           # "yyyy-mm-dd"
     value: float
     notes: Optional[str] = None
 
@@ -40,3 +41,8 @@ class TestResult(TestResultBase):
 
     class Config:
         orm_mode = True
+
+class TestResultUpdate(BaseModel):
+    date: Optional[dt.date] = None
+    value: Optional[float] = None
+    notes: Optional[str] = None
