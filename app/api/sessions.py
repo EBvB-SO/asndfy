@@ -19,7 +19,7 @@ from app.models.session import SessionTracking
 from app.core.dependencies import get_current_user_email
 from app.core.database import get_db
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("ascendify")
 
 router = APIRouter(
     prefix="/user/{email}/plans/{planId}/sessions",
@@ -67,8 +67,6 @@ async def get_sessions(
         )
         for s in sessions
     ]
-
-# app/api/sessions.py
 
 @router.post("/initialize", response_model=Dict[str, Any])
 async def initialize_sessions(
@@ -120,38 +118,64 @@ async def initialize_sessions(
     created_rows: list[DBSessionTracking] = []
     now = datetime.utcnow()
 
-    # Each plan.phase is expected to expose:
-    #   phase.week_start (int), phase.week_end (int), phase.weekly_schedule (list of {"day","focus"})
-    # If your DB stores JSON strings, ensure .phases is already a parsed structure (your codebase suggests it is).
     for phase in plan.phases:
-        # Defensive checks in case of malformed data
-        week_start = getattr(phase, "week_start", None)
-        week_end = getattr(phase, "week_end", None)
-        schedule = getattr(phase, "weekly_schedule", None)
-        if not isinstance(week_start, int) or not isinstance(week_end, int) or not isinstance(schedule, list):
-            continue  # skip bad phase safely
-
-        for week_num in range(week_start, week_end + 1):
-            for day in schedule:
-                day_name = (day.get("day") or "").strip()
-                focus = (day.get("focus") or "").strip()
+        # NEW: If the phase has 'sessions' (the newer structure), use those.
+        fallback_sessions = getattr(phase, "sessions", None)
+        if isinstance(fallback_sessions, list) and fallback_sessions:
+            # Derive a week number from phase_order (so Phase 1 => week 1, Phase 2 => week 2, etc.)
+            week_number = getattr(phase, "phase_order", 1)
+            for sess in fallback_sessions:
+                # SQLAlchemy objects expose attributes; dicts use keys
+                if hasattr(sess, "day"):
+                    day_name = (sess.day or "").strip()
+                    focus    = (sess.focus or "").strip()
+                else:
+                    day_name = (sess.get("day") or "").strip()
+                    focus    = (sess.get("focus") or "").strip()
                 if not day_name or not focus:
                     continue
-
                 created_rows.append(
                     DBSessionTracking(
                         id=str(uuid.uuid4()).lower(),
                         user_id=user.id,
                         plan_id=plan_id,
-                        week_number=week_num,
-                        day_of_week=day_name,           # e.g. "Monday"
-                        focus_name=focus,               # e.g. "Max Boulder Sessions + Density Hangs"
+                        week_number=week_number,
+                        day_of_week=day_name,
+                        focus_name=focus,
                         is_completed=False,
                         notes="",
                         created_at=now,
                         updated_at=now,
                     )
                 )
+            # Go to next phase; don't run the legacy weekly_schedule logic
+            continue
+
+        # Legacy support: fall back to week_start/week_end/weekly_schedule if provided
+        week_start = getattr(phase, "week_start", None)
+        week_end   = getattr(phase, "week_end", None)
+        schedule   = getattr(phase, "weekly_schedule", None)
+        if isinstance(week_start, int) and isinstance(week_end, int) and isinstance(schedule, list):
+            for week_num in range(week_start, week_end + 1):
+                for day in schedule:
+                    day_name = (day.get("day") or "").strip()
+                    focus    = (day.get("focus") or "").strip()
+                    if not day_name or not focus:
+                        continue
+                    created_rows.append(
+                        DBSessionTracking(
+                            id=str(uuid.uuid4()).lower(),
+                            user_id=user.id,
+                            plan_id=plan_id,
+                            week_number=week_num,
+                            day_of_week=day_name,
+                            focus_name=focus,
+                            is_completed=False,
+                            notes="",
+                            created_at=now,
+                            updated_at=now,
+                        )
+                    )
 
     # 6) Persist
     if not created_rows:
@@ -160,6 +184,8 @@ async def initialize_sessions(
 
     db.add_all(created_rows)
     db.commit()
+    created = len(created_rows)
+    logger.info(f"Initialized {created} session rows for user={user.id}, plan={plan_id}")
 
     return {
         "success": True,
